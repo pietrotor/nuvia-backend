@@ -1,0 +1,56 @@
+import { Inject, Injectable } from '@nestjs/common';
+
+import {
+  USER_REPOSITORY,
+  UserRepository,
+} from '@domain/users/repositories/user.repository';
+import { PublicUser } from '@domain/users/entities/user.entity';
+import { Role } from '@domain/users/value-objects/role.vo';
+import {
+  EmailAlreadyRegisteredError,
+  SuperadminCannotBelongToTenantError,
+} from '@domain/users/exceptions/user.exceptions';
+import { AuditAction } from '@domain/audit/entities/audit-log.entity';
+import { BcryptService } from '@infrastructure/auth/bcrypt/bcrypt.service';
+import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { CreateUserDto } from '../dto/create-user.dto';
+
+@Injectable()
+export class CreateUserUseCase {
+  constructor(
+    @Inject(USER_REPOSITORY)
+    private readonly userRepository: UserRepository,
+    private readonly bcrypt: BcryptService,
+    private readonly audit: AuditRecorder,
+  ) {}
+
+  async execute(dto: CreateUserDto): Promise<PublicUser> {
+    if (dto.role === Role.SUPERADMIN) {
+      throw new SuperadminCannotBelongToTenantError();
+    }
+
+    const email = dto.email.trim().toLowerCase();
+
+    // Email is unique across the whole platform, so the check cannot be scoped.
+    if (await this.userRepository.findByEmailUnscoped(email)) {
+      throw new EmailAlreadyRegisteredError(email);
+    }
+
+    const created = await this.userRepository.create({
+      name: dto.name.trim(),
+      email,
+      password: await this.bcrypt.hash(dto.password),
+      role: dto.role,
+      phone: dto.phone ?? null,
+    });
+
+    await this.audit.record({
+      action: AuditAction.USER_CREATED,
+      entity: 'user',
+      entityId: created.id,
+      after: { email: created.email, role: created.role },
+    });
+
+    return created.toPublic();
+  }
+}
