@@ -51,6 +51,12 @@ export default tseslint.config(
     },
   },
   {
+    // Dev scripts run on bare Node: they are outside the TypeScript program, so
+    // type-aware linting cannot resolve them.
+    files: ['scripts/**/*.mjs'],
+    extends: [tseslint.configs.disableTypeChecked],
+  },
+  {
     // Domain layer stays framework-free: it must compile without Nest, Drizzle or
     // Express, and it must not depend on the layers above it.
     files: ['src/domain/**/*.ts'],
@@ -71,7 +77,7 @@ export default tseslint.config(
                 '@interface/*',
               ],
               message:
-                'domain/ no puede depender de frameworks ni de otras capas.',
+                'domain/ cannot depend on frameworks or on the layers above it.',
             },
           ],
         },
@@ -90,14 +96,20 @@ export default tseslint.config(
               name: '@nestjs/common',
               importNames: nestjsHttpExceptions,
               message:
-                'Lanzá una excepción de dominio; el filtro global la traduce a HTTP.',
+                'Throw a domain exception; the global filter turns it into HTTP.',
             },
           ],
           patterns: [
             {
-              group: ['drizzle-orm', 'drizzle-orm/*', 'pg', '@interface/*'],
+              group: [
+                'drizzle-orm',
+                'drizzle-orm/*',
+                'pg',
+                '@infrastructure/*',
+                '@interface/*',
+              ],
               message:
-                'application/ habla con puertos, no con la base ni con HTTP.',
+                'application/ talks to ports, not to infrastructure, the database or HTTP.',
             },
           ],
         },

@@ -18,8 +18,8 @@ import {
   TenantRepository,
 } from '@domain/tenants/repositories/tenant.repository';
 import { TenantSuspendedError } from '@domain/tenants/exceptions/tenant.exceptions';
+import { AuthTokenPayload } from '@domain/auth/ports/token-signer.port';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
-import { JwtPayload } from './jwt-payload.interface';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -37,7 +37,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     });
   }
 
-  async validate(payload: JwtPayload): Promise<User> {
+  async validate(payload: AuthTokenPayload): Promise<User> {
     const user = await this.userRepository.findByIdUnscoped(payload.sub);
 
     if (!user) {

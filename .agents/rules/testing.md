@@ -33,8 +33,9 @@ beforeEach(() => {
 Mockeá con `Pick<>` los métodos que el test usa en vez de castear todo a `any`: si mañana alguien agrega
 una llamada al puerto, el test falla al compilar en vez de pasar con un `undefined`.
 
-Los nombres de los `it()` describen el comportamiento, no el método, y van en español porque son
-documentación: `it('no confirma la cita si la seña no está verificada')`, no `it('should call confirm')`.
+Los nombres de los `it()` describen el comportamiento, no el método, y van en inglés como el resto del
+código: `it('does not confirm the appointment when the deposit is unverified')`, no
+`it('should call confirm')`.
 
 ## Tests obligatorios (reglas del PRD)
 

@@ -19,7 +19,7 @@ export class AppointmentsController {
 
   @Get()
   @Auth(Role.OWNER, Role.STAFF)
-  @ApiOperation({ summary: 'Lista las citas del negocio' })
+  @ApiOperation({ summary: 'List appointments in a date range' })
   @ApiResponse({ status: 200, type: [AppointmentResponseDto] })
   async findAll(@Query() pagination: PaginationDto): Promise<AppointmentResponseDto[]> {
     const appointments = await this.listAppointments.execute(pagination);
@@ -29,7 +29,9 @@ export class AppointmentsController {
 }
 ```
 
-El texto de Swagger va en español porque lo lee una persona; los identificadores, en inglés.
+Todo el texto de Swagger va en **inglés**: `summary`, `description`, los `@ApiProperty` de los DTOs. Es
+documentación técnica, no copy para la dueña ni para su clienta. Lo único en español que sale por la API es
+el `message` de un error, y ese viene del catálogo de i18n — ver [errors.md](errors.md).
 
 ## Auth por defecto
 

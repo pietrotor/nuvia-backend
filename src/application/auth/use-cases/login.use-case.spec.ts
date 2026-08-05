@@ -1,5 +1,3 @@
-import { JwtService } from '@nestjs/jwt';
-
 import { User } from '@domain/users/entities/user.entity';
 import { Role } from '@domain/users/value-objects/role.vo';
 import {
@@ -10,18 +8,17 @@ import { UserRepository } from '@domain/users/repositories/user.repository';
 import { Tenant } from '@domain/tenants/entities/tenant.entity';
 import { TenantRepository } from '@domain/tenants/repositories/tenant.repository';
 import { TenantStatus } from '@domain/tenants/value-objects/tenant-status.vo';
-import { Vertical } from '@domain/tenants/value-objects/vertical.vo';
 import { TenantSuspendedError } from '@domain/tenants/exceptions/tenant.exceptions';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
-import { BcryptService } from '@infrastructure/auth/bcrypt/bcrypt.service';
+import { PasswordHasherPort } from '@domain/users/ports/password-hasher.port';
+import { TokenSignerPort } from '@domain/auth/ports/token-signer.port';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { LoginUseCase } from './login.use-case';
 
 const tenant = (status: TenantStatus) =>
   new Tenant({
     id: 'tenant-1',
-    name: 'Academia Ritmo',
-    vertical: Vertical.ACADEMY,
+    name: 'Estética Glow',
     status,
     timezone: 'America/La_Paz',
   });
@@ -43,21 +40,21 @@ describe('LoginUseCase', () => {
 
   let userRepository: jest.Mocked<Pick<UserRepository, 'findByEmailUnscoped'>>;
   let tenantRepository: jest.Mocked<Pick<TenantRepository, 'findById'>>;
-  let bcrypt: jest.Mocked<Pick<BcryptService, 'compare'>>;
+  let passwordHasher: jest.Mocked<Pick<PasswordHasherPort, 'compare'>>;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
   let useCase: LoginUseCase;
 
   beforeEach(() => {
     userRepository = { findByEmailUnscoped: jest.fn() };
     tenantRepository = { findById: jest.fn() };
-    bcrypt = { compare: jest.fn().mockResolvedValue(true) };
+    passwordHasher = { compare: jest.fn().mockResolvedValue(true) };
     audit = { record: jest.fn().mockResolvedValue(undefined) };
 
     useCase = new LoginUseCase(
       userRepository as unknown as UserRepository,
       tenantRepository as unknown as TenantRepository,
-      bcrypt as unknown as BcryptService,
-      { sign: () => 'signed-token' } as unknown as JwtService,
+      passwordHasher as unknown as PasswordHasherPort,
+      { sign: () => 'signed-token' } as TokenSignerPort,
       audit as unknown as AuditRecorder,
     );
   });
@@ -78,7 +75,7 @@ describe('LoginUseCase', () => {
 
   it('logs the failure without revealing whether the email exists', async () => {
     userRepository.findByEmailUnscoped.mockResolvedValue(user());
-    bcrypt.compare.mockResolvedValue(false);
+    passwordHasher.compare.mockResolvedValue(false);
 
     await expect(useCase.execute(credentials)).rejects.toThrow(
       InvalidCredentialsError,

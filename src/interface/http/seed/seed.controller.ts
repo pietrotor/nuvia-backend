@@ -16,7 +16,7 @@ export class SeedController {
   @Post()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
-    summary: 'Recrea los datos de prueba (solo fuera de producción)',
+    summary: 'Recreates the test data (only outside production)',
   })
   execute(): Promise<SeedResult> {
     return this.seed.execute();

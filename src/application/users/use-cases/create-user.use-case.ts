@@ -10,8 +10,11 @@ import {
   EmailAlreadyRegisteredError,
   SuperadminCannotBelongToTenantError,
 } from '@domain/users/exceptions/user.exceptions';
+import {
+  PASSWORD_HASHER_PORT,
+  PasswordHasherPort,
+} from '@domain/users/ports/password-hasher.port';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
-import { BcryptService } from '@infrastructure/auth/bcrypt/bcrypt.service';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { CreateUserDto } from '../dto/create-user.dto';
 
@@ -20,7 +23,8 @@ export class CreateUserUseCase {
   constructor(
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
-    private readonly bcrypt: BcryptService,
+    @Inject(PASSWORD_HASHER_PORT)
+    private readonly passwordHasher: PasswordHasherPort,
     private readonly audit: AuditRecorder,
   ) {}
 
@@ -39,7 +43,7 @@ export class CreateUserUseCase {
     const created = await this.userRepository.create({
       name: dto.name.trim(),
       email,
-      password: await this.bcrypt.hash(dto.password),
+      password: await this.passwordHasher.hash(dto.password),
       role: dto.role,
       phone: dto.phone ?? null,
     });

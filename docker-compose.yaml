@@ -1,5 +1,3 @@
-version: '3'
-
 services:
   db:
     image: postgres:14.3
@@ -9,6 +7,91 @@ services:
     environment:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
-    container_name: rentapro_db
+      POSTGRES_USER: ${DB_USERNAME:-postgres}
+    container_name: nuvia_db
     volumes:
       - ./postgres:/var/lib/postgresql/data
+      - ./docker/init-databases.sql:/docker-entrypoint-initdb.d/01-init.sql
+
+  redis:
+    image: redis:7-alpine
+    restart: always
+    ports:
+      - '6379:6379'
+    container_name: nuvia_redis
+    volumes:
+      - redis_data:/data
+
+  evolution-api:
+    # Patched image: see docker/evolution/Dockerfile for why we can't use the
+    # upstream one as-is.
+    build:
+      context: ./docker/evolution
+    image: nuvia/evolution-api:v2.3.7-baileys-rc14
+    restart: always
+    depends_on:
+      - db
+      - redis
+    ports:
+      - '8080:8080'
+    container_name: nuvia_evolution
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8080}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: 'true'
+      DATABASE_ENABLED: 'true'
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${DB_USERNAME:-postgres}:${DB_PASSWORD}@db:5432/evolution
+      DATABASE_CONNECTION_CLIENT_NAME: nuvia_evolution
+      DATABASE_SAVE_DATA_INSTANCE: 'true'
+      DATABASE_SAVE_DATA_NEW_MESSAGE: 'true'
+      DATABASE_SAVE_MESSAGE_UPDATE: 'true'
+      DATABASE_SAVE_DATA_CONTACTS: 'true'
+      DATABASE_SAVE_DATA_CHATS: 'true'
+      DATABASE_SAVE_DATA_LABELS: 'true'
+      DATABASE_SAVE_DATA_HISTORIC: 'false'
+      CACHE_REDIS_ENABLED: 'true'
+      CACHE_REDIS_URI: redis://redis:6379
+      CACHE_REDIS_PREFIX_KEY: evolution
+      LOG_LEVEL: ERROR,WARN,INFO
+      DEL_INSTANCE: 'false'
+    volumes:
+      - evolution_instances:/evolution/instances
+
+  # Perfil `stack`: corre la API dentro de la red de Docker para que Evolution
+  # pueda entregar webhooks. Para desarrollo local sin contenedor: yarn start:dev.
+  api:
+    image: node:20-bookworm-slim
+    profiles: ['stack']
+    restart: unless-stopped
+    depends_on:
+      - db
+      - redis
+      - evolution-api
+    ports:
+      - '3010:3010'
+    container_name: nuvia_api
+    working_dir: /app
+    # `nest start --watch` shells out to `ps` to restart the child process,
+    # and the slim image ships without procps.
+    command: >
+      sh -c "command -v ps >/dev/null ||
+             (apt-get update -qq && apt-get install -y -qq procps >/dev/null);
+             exec yarn start:dev"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_PORT: '5432'
+      REDIS_HOST: redis
+      REDIS_PORT: '6379'
+      EVOLUTION_API_URL: http://evolution-api:8080
+      WEBHOOK_PUBLIC_URL: http://api:3010/api/v1/webhooks/whatsapp
+    volumes:
+      - .:/app
+
+volumes:
+  redis_data:
+  evolution_instances:

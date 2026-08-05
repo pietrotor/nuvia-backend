@@ -2,6 +2,7 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 import { Injectable } from '@nestjs/common';
 
 import { TenantContextMissingError } from '@domain/common/exceptions';
+import { TenantContextPort } from '@domain/tenants/ports/tenant-context.port';
 import { Role } from '@domain/users/value-objects/role.vo';
 
 export interface TenantContext {
@@ -17,7 +18,7 @@ const emptyContext = (): TenantContext => ({
 });
 
 @Injectable()
-export class TenantContextService {
+export class TenantContextService implements TenantContextPort {
   private readonly storage = new AsyncLocalStorage<TenantContext>();
 
   // Opens a mutable store for the whole request. The store is seeded empty by the

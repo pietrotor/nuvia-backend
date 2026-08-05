@@ -1,5 +1,4 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { JwtService } from '@nestjs/jwt';
 
 import {
   USER_REPOSITORY,
@@ -11,13 +10,20 @@ import {
   UserInactiveError,
 } from '@domain/users/exceptions/user.exceptions';
 import {
+  PASSWORD_HASHER_PORT,
+  PasswordHasherPort,
+} from '@domain/users/ports/password-hasher.port';
+import {
+  AuthTokenPayload,
+  TOKEN_SIGNER_PORT,
+  TokenSignerPort,
+} from '@domain/auth/ports/token-signer.port';
+import {
   TENANT_REPOSITORY,
   TenantRepository,
 } from '@domain/tenants/repositories/tenant.repository';
 import { TenantSuspendedError } from '@domain/tenants/exceptions/tenant.exceptions';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
-import { BcryptService } from '@infrastructure/auth/bcrypt/bcrypt.service';
-import { JwtPayload } from '@infrastructure/auth/jwt/jwt-payload.interface';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { LoginDto } from '../dto/login.dto';
 
@@ -33,8 +39,10 @@ export class LoginUseCase {
     private readonly userRepository: UserRepository,
     @Inject(TENANT_REPOSITORY)
     private readonly tenantRepository: TenantRepository,
-    private readonly bcrypt: BcryptService,
-    private readonly jwt: JwtService,
+    @Inject(PASSWORD_HASHER_PORT)
+    private readonly passwordHasher: PasswordHasherPort,
+    @Inject(TOKEN_SIGNER_PORT)
+    private readonly tokenSigner: TokenSignerPort,
     private readonly audit: AuditRecorder,
   ) {}
 
@@ -42,7 +50,8 @@ export class LoginUseCase {
     const email = dto.email.trim().toLowerCase();
     const user = await this.userRepository.findByEmailUnscoped(email);
     const passwordMatches =
-      user !== null && (await this.bcrypt.compare(dto.password, user.password));
+      user !== null &&
+      (await this.passwordHasher.compare(dto.password, user.password));
 
     if (!passwordMatches) {
       await this.audit.record({
@@ -69,7 +78,7 @@ export class LoginUseCase {
       }
     }
 
-    const payload: JwtPayload = {
+    const payload: AuthTokenPayload = {
       sub: user.id,
       tenantId: user.tenantId,
       role: user.role,
@@ -84,6 +93,6 @@ export class LoginUseCase {
       ip,
     });
 
-    return { user: user.toPublic(), token: this.jwt.sign(payload) };
+    return { user: user.toPublic(), token: this.tokenSigner.sign(payload) };
   }
 }

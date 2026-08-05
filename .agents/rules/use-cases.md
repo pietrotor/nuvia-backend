@@ -33,7 +33,9 @@ Reglas:
 
 - **Siempre** `@Injectable()`. Sin el decorador, Nest resuelve las dependencias solo por casualidad.
 - **Siempre** tipo de retorno explícito en `execute()`.
-- Los repositorios y puertos se inyectan con `@Inject(TOKEN)`. Los servicios concretos de infraestructura (`BcryptService`, `JwtService`) se inyectan por clase.
+- Los repositorios y puertos se inyectan con `@Inject(TOKEN)`. Application nunca inyecta servicios
+  concretos de infrastructure (`BcryptService`, `JwtService`, `ConfigService`): consume puertos de
+  dominio y los adapters se registran en el módulo de infrastructure correspondiente.
 - El use case **no** conoce HTTP: no recibe `Request`, no lanza `NotFoundException`, no devuelve status codes. Ver [errors.md](errors.md).
 - El use case **no** arma SQL ni toca Drizzle. Todo acceso a datos pasa por un puerto.
 

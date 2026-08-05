@@ -5,8 +5,11 @@ import {
   AuditLogRepository,
 } from '@domain/audit/repositories/audit-log.repository';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
-import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
-import { AppLoggerService } from '@infrastructure/logger/logger.service';
+import {
+  TENANT_CONTEXT_PORT,
+  TenantContextPort,
+} from '@domain/tenants/ports/tenant-context.port';
+import { LOGGER_PORT, LoggerPort } from '@domain/common/ports/logger.port';
 
 export interface AuditEntry {
   action: AuditAction;
@@ -24,8 +27,10 @@ export class AuditRecorder {
   constructor(
     @Inject(AUDIT_LOG_REPOSITORY)
     private readonly auditLogRepository: AuditLogRepository,
-    private readonly tenantContext: TenantContextService,
-    private readonly logger: AppLoggerService,
+    @Inject(TENANT_CONTEXT_PORT)
+    private readonly tenantContext: TenantContextPort,
+    @Inject(LOGGER_PORT)
+    private readonly logger: LoggerPort,
   ) {}
 
   async record(entry: AuditEntry): Promise<void> {

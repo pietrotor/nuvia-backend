@@ -39,8 +39,7 @@ export class UpdateTenantUseCase {
       before: {
         name: current.name,
         timezone: current.timezone,
-        whatsappPhone: current.whatsappPhone,
-        staticQrUrl: current.staticQrUrl,
+        plan: current.plan,
       },
       after: dto,
     });

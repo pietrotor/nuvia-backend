@@ -3,8 +3,12 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 
+import { PASSWORD_HASHER_PORT } from '@domain/users/ports/password-hasher.port';
+import { TOKEN_SIGNER_PORT } from '@domain/auth/ports/token-signer.port';
+
 import { BcryptService } from './bcrypt/bcrypt.service';
 import { JwtStrategy } from './jwt/jwt.strategy';
+import { JwtTokenSignerAdapter } from './jwt/jwt-token-signer.adapter';
 
 @Global()
 @Module({
@@ -22,7 +26,19 @@ import { JwtStrategy } from './jwt/jwt.strategy';
       }),
     }),
   ],
-  providers: [BcryptService, JwtStrategy],
-  exports: [BcryptService, JwtStrategy, JwtModule, PassportModule],
+  providers: [
+    BcryptService,
+    JwtTokenSignerAdapter,
+    { provide: PASSWORD_HASHER_PORT, useExisting: BcryptService },
+    { provide: TOKEN_SIGNER_PORT, useExisting: JwtTokenSignerAdapter },
+    JwtStrategy,
+  ],
+  exports: [
+    PASSWORD_HASHER_PORT,
+    TOKEN_SIGNER_PORT,
+    JwtStrategy,
+    JwtModule,
+    PassportModule,
+  ],
 })
 export class AuthInfrastructureModule {}

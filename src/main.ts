@@ -23,8 +23,8 @@ async function bootstrap() {
   );
 
   const config = new DocumentBuilder()
-    .setTitle('CobrAI API')
-    .setDescription('Cobranzas recurrentes multi-tenant')
+    .setTitle('Nuvi API')
+    .setDescription('API de agenda y agente WhatsApp multi-tenant')
     .setVersion('1.0')
     .addBearerAuth()
     .build();

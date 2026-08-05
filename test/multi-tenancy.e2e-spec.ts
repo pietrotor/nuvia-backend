@@ -39,10 +39,10 @@ describe('Multi-tenancy (e2e)', () => {
 
     await request(app.getHttpServer()).post('/api/v1/seed').expect(200);
 
-    ritmoOwner = await login('ana@ritmo.test');
-    ritmoStaff = await login('luis@ritmo.test');
-    pasitosOwner = await login('marta@pasitos.test');
-    superadmin = await login('soporte@cobrai.test');
+    ritmoOwner = await login('ana@glow.test');
+    ritmoStaff = await login('luis@glow.test');
+    pasitosOwner = await login('marta@luna.test');
+    superadmin = await login('soporte@nuvi.test');
   });
 
   afterAll(async () => {
@@ -62,10 +62,10 @@ describe('Multi-tenancy (e2e)', () => {
     const emailsOf = (body: { email: string }[]) =>
       body.map((user) => user.email).sort();
 
-    expect(emailsOf(ritmo.body)).toEqual(['ana@ritmo.test', 'luis@ritmo.test']);
+    expect(emailsOf(ritmo.body)).toEqual(['ana@glow.test', 'luis@glow.test']);
     expect(emailsOf(pasitos.body)).toEqual([
-      'marta@pasitos.test',
-      'rocio@pasitos.test',
+      'marta@luna.test',
+      'rocio@luna.test',
     ]);
   });
 
@@ -119,7 +119,7 @@ describe('Multi-tenancy (e2e)', () => {
       .set('Authorization', `Bearer ${ritmoOwner}`)
       .expect(200);
 
-    expect(response.body.name).toBe('Academia de Danza Ritmo');
+    expect(response.body.name).toBe('Estética Glow');
   });
 
   it('a user created by an owner lands in the owner tenant', async () => {
@@ -143,6 +143,236 @@ describe('Multi-tenancy (e2e)', () => {
     expect(pasitos.body.map((user: { id: string }) => user.id)).not.toContain(
       created.body.id,
     );
+  });
+
+  it('business configuration is tenant-scoped and owner-only', async () => {
+    const ritmo = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const pasitos = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+
+    expect(ritmo.body.slug).toBe('estetica-glow');
+    expect(pasitos.body.slug).toBe('spa-luna');
+    expect(ritmo.body).not.toHaveProperty('tenantId');
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoStaff}`)
+      .send({ agentName: 'Luna' })
+      .expect(403);
+  });
+
+  it('only support changes the trade the agent is set up for', async () => {
+    const glow = await request(app.getHttpServer())
+      .get('/api/v1/tenants/me')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+
+    await request(app.getHttpServer())
+      .patch('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ businessCategory: 'spa' })
+      .expect(400);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/tenants/${glow.body.id}/business-category`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ businessCategory: 'spa' })
+      .expect(403);
+
+    const changed = await request(app.getHttpServer())
+      .patch(`/api/v1/tenants/${glow.body.id}/business-category`)
+      .set('Authorization', `Bearer ${superadmin}`)
+      .send({ businessCategory: 'spa' })
+      .expect(200);
+    expect(changed.body.businessCategory).toBe('spa');
+
+    const seenByOwner = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(seenByOwner.body.businessCategory).toBe('spa');
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/tenants/${glow.body.id}/business-category`)
+      .set('Authorization', `Bearer ${superadmin}`)
+      .send({ businessCategory: 'esthetics' })
+      .expect(200);
+  });
+
+  it('keeps the agent voice of one tenant out of the other', async () => {
+    await request(app.getHttpServer())
+      .patch('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({
+        agentPolicy: {
+          handoffAutoResumeMinutes: 30,
+          emojiPolicy: 'none',
+          businessNotes: '## Parqueo **atrás**',
+        },
+      })
+      .expect(200);
+
+    const glow = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const luna = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+
+    expect(glow.body.agentPolicy).toEqual({
+      handoffAutoResumeMinutes: 30,
+      emojiPolicy: 'none',
+      businessNotes: 'Parqueo atrás',
+    });
+    expect(luna.body.agentPolicy.emojiPolicy).toBe('light');
+    expect(luna.body.agentPolicy.businessNotes).toBeNull();
+  });
+
+  it('an owner can configure the catalog with valid E1 rules', async () => {
+    const configured = await request(app.getHttpServer())
+      .patch('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({
+        agentName: 'Nuna',
+        businessHours: {
+          mon: { start: '09:00', end: '18:00' },
+          tue: { start: '09:00', end: '18:00' },
+          wed: { start: '09:00', end: '18:00' },
+          thu: { start: '09:00', end: '18:00' },
+          fri: { start: '09:00', end: '18:00' },
+          sat: { start: '09:00', end: '13:00' },
+          sun: null,
+        },
+      })
+      .expect(200);
+    expect(configured.body.agentName).toBe('Nuna');
+
+    const professional = await request(app.getHttpServer())
+      .post('/api/v1/professionals')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({
+        name: 'Laura Méndez',
+        weeklyHours: configured.body.businessHours,
+      })
+      .expect(201);
+
+    const service = await request(app.getHttpServer())
+      .post('/api/v1/services')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({
+        name: 'Masaje relajante',
+        durationMinutes: 60,
+        price: '180.00',
+        requiresDeposit: true,
+        depositPercent: 30,
+        professionalIds: [professional.body.id],
+      })
+      .expect(201);
+    expect(service.body.depositPercent).toBe(30);
+    expect(service.body.price).toEqual({
+      amount: '180.00',
+      currency: 'BOB',
+      symbol: 'Bs',
+    });
+
+    const withoutDeposit = await request(app.getHttpServer())
+      .patch(`/api/v1/services/${service.body.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ requiresDeposit: false })
+      .expect(200);
+    expect(withoutDeposit.body.depositAmount).toBeNull();
+    expect(withoutDeposit.body.depositPercent).toBeNull();
+  });
+
+  it('professional and service catalogs never cross tenants', async () => {
+    const ritmoProfessionals = await request(app.getHttpServer())
+      .get('/api/v1/professionals')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const pasitosProfessionals = await request(app.getHttpServer())
+      .get('/api/v1/professionals')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    const foreignProfessionalId = pasitosProfessionals.body[0].id;
+
+    expect(
+      ritmoProfessionals.body.map((item: { id: string }) => item.id),
+    ).not.toContain(foreignProfessionalId);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/professionals/${foreignProfessionalId}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ name: 'No permitido' })
+      .expect(404);
+
+    const ritmoServices = await request(app.getHttpServer())
+      .get('/api/v1/services')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const pasitosServices = await request(app.getHttpServer())
+      .get('/api/v1/services')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    const foreignServiceId = pasitosServices.body[0].id;
+
+    expect(
+      ritmoServices.body.map((item: { id: string }) => item.id),
+    ).not.toContain(foreignServiceId);
+    await request(app.getHttpServer())
+      .patch(`/api/v1/services/${foreignServiceId}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ name: 'No permitido' })
+      .expect(404);
+  });
+
+  it('deactivates schedule blocks without deleting or leaking them', async () => {
+    const professionals = await request(app.getHttpServer())
+      .get('/api/v1/professionals')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/schedule-blocks')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({
+        professionalId: professionals.body[0].id,
+        startsAt: '2030-08-10T12:00:00.000Z',
+        endsAt: '2030-08-10T13:00:00.000Z',
+        reason: 'Almuerzo',
+      })
+      .expect(201);
+
+    const foreignList = await request(app.getHttpServer())
+      .get('/api/v1/schedule-blocks')
+      .query({
+        from: '2030-08-01T00:00:00.000Z',
+        to: '2030-09-01T00:00:00.000Z',
+      })
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    expect(foreignList.body).toEqual([]);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/schedule-blocks/${created.body.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ isActive: false })
+      .expect(200);
+
+    const activeList = await request(app.getHttpServer())
+      .get('/api/v1/schedule-blocks')
+      .query({
+        from: '2030-08-01T00:00:00.000Z',
+        to: '2030-09-01T00:00:00.000Z',
+      })
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(activeList.body).toEqual([]);
   });
 
   it('rejects a request with no token', async () => {

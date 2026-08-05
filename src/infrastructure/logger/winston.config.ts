@@ -1,7 +1,7 @@
 import { utilities as nestWinstonModuleUtilities } from 'nest-winston';
 import * as winston from 'winston';
-// El paquete usa `export =`, así que el import por default depende del helper de interop
-// que tsc emite y los transpiladores on-the-fly (p. ej. Console Ninja) no siempre agregan.
+// The package uses `export =`, so a default import depends on the interop helper that
+// tsc emits and that on-the-fly transpilers (e.g. Console Ninja) do not always add.
 import DailyRotateFile = require('winston-daily-rotate-file');
 
 export const winstonConfig = {
@@ -10,7 +10,7 @@ export const winstonConfig = {
       format: winston.format.combine(
         winston.format.timestamp({ format: 'YYYY-MM-DD HH:mm:ss' }),
         winston.format.ms(),
-        nestWinstonModuleUtilities.format.nestLike('CobrAI', {
+        nestWinstonModuleUtilities.format.nestLike('Nuvi', {
           colors: true,
           prettyPrint: true,
         }),

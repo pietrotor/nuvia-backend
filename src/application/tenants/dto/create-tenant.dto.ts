@@ -10,7 +10,7 @@ import {
   ValidateNested,
 } from 'class-validator';
 
-import { Vertical } from '@domain/tenants/value-objects/vertical.vo';
+import { BusinessCategory } from '@domain/business-config/value-objects/business-category.vo';
 
 export class TenantOwnerDto {
   @ApiProperty({ example: 'Ana Quiroga' })
@@ -18,7 +18,7 @@ export class TenantOwnerDto {
   @MinLength(2)
   name: string;
 
-  @ApiProperty({ example: 'ana@academiadanza.bo' })
+  @ApiProperty({ example: 'ana@glow.bo' })
   @IsEmail()
   email: string;
 
@@ -34,14 +34,10 @@ export class TenantOwnerDto {
 }
 
 export class CreateTenantDto {
-  @ApiProperty({ example: 'Academia de Danza Ritmo' })
+  @ApiProperty({ example: 'Estética Glow' })
   @IsString()
   @MinLength(2)
   name: string;
-
-  @ApiProperty({ enum: Vertical, example: Vertical.ACADEMY })
-  @IsEnum(Vertical)
-  vertical: Vertical;
 
   @ApiProperty({ example: 'America/La_Paz', required: false })
   @IsOptional()
@@ -52,6 +48,21 @@ export class CreateTenantDto {
   @IsOptional()
   @IsString()
   plan?: string;
+
+  @ApiProperty({ example: 'estetica-glow', required: false })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
+  slug?: string;
+
+  @ApiProperty({
+    enum: BusinessCategory,
+    required: false,
+    description: 'Trade the agent is set up for. Defaults to a generic one',
+  })
+  @IsOptional()
+  @IsEnum(BusinessCategory)
+  businessCategory?: BusinessCategory;
 
   @ApiProperty({ type: TenantOwnerDto })
   @ValidateNested()

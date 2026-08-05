@@ -1,18 +1,21 @@
-import { ApiProperty } from '@nestjs/swagger';
+import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsOptional, IsPositive, Min } from 'class-validator';
+import { IsOptional, IsPositive, Max, Min } from 'class-validator';
+
+export const MAX_PAGE_SIZE = 100;
 
 export class PaginationDto {
-  @ApiProperty({
-    default: 10,
+  @ApiPropertyOptional({
+    maximum: MAX_PAGE_SIZE,
     description: 'How many rows do you need',
   })
   @IsOptional()
   @IsPositive()
+  @Max(MAX_PAGE_SIZE)
   @Type(() => Number)
   limit?: number;
 
-  @ApiProperty({
+  @ApiPropertyOptional({
     default: 0,
     description: 'How many rows do you want to skip',
   })

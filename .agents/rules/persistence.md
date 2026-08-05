@@ -49,7 +49,12 @@ Toda tabla lleva `id`, `tenant_id`, `created_at`, `updated_at` — ver [multi-te
 **Siempre `numeric(12, 2)`. Nunca `real`, `double precision` ni `float`.** Un centavo perdido por redondeo
 binario es un incidente de confianza. Al leer, convertí explícitamente.
 
-Los montos del PRD están en Bolivianos (Bs). No guardes moneda por fila: V1 es mono-moneda.
+**Un monto nunca viaja sin su moneda.** La moneda del negocio vive en `BusinessConfig.currency` (default
+`BOB`) y cada `Service` guarda la suya en una columna `currency` del enum `currency`: se copia de la config
+al crear el servicio, así cambiar la moneda del negocio no reinterpreta los precios ya cargados. En el
+dominio el par monto + moneda es el value object `Money`; el símbolo que ve la clienta (`Bs`, `$`) sale del
+catálogo `Currency`, nunca de un literal en la vista. Agregar una moneda = una entrada en `Currency` con su
+símbolo y un `ALTER TYPE currency ADD VALUE` en una migración.
 
 ## Estados, no borrado
 

@@ -6,8 +6,10 @@ import {
 import { WINSTON_MODULE_PROVIDER } from 'nest-winston';
 import { Logger } from 'winston';
 
+import { LoggerPort } from '@domain/common/ports/logger.port';
+
 @Injectable()
-export class AppLoggerService implements NestLoggerService {
+export class AppLoggerService implements NestLoggerService, LoggerPort {
   constructor(
     @Inject(WINSTON_MODULE_PROVIDER) private readonly logger: Logger,
   ) {}

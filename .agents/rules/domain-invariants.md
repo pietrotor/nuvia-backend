@@ -7,68 +7,79 @@ paths:
 
 # Invariantes de negocio
 
-Estas reglas se rompen fácil sin darse cuenta. Vienen de [docs/prd-nuvi-v1.md](../../../docs/prd-nuvi-v1.md)
-(sección 0 — reglas no negociables — y épicas E2–E6, E9–E10).
+Estas reglas se rompen fácil sin darse cuenta. Vienen del PRD
+([docs/prd-nuvi-v1.md](../../../docs/prd-nuvi-v1.md)) y de la arquitectura
+([docs/architecture.md](../../../docs/architecture.md)).
 
 ## 1. Nunca ofrecer un horario no disponible
 
 Ninguna cita se agenda en un horario ocupado, fuera del horario del profesional, o bloqueado
-(`ScheduleBlock`). La verificación de disponibilidad ocurre **al confirmar**, no solo al listar
-opciones: entre la oferta y la confirmación el slot puede haberse tomado (WhatsApp, panel o web).
+(`ScheduleBlock`). La verificación ocurre **al confirmar** (re-check), no solo al listar opciones.
 
-Si estás listando slots, filtrá contra la misma agenda que usa el panel y la página de reservas.
-No hay agendas paralelas.
+**Una sola implementación:** `AvailabilityCalculator` + `BookAppointmentUseCase`. Lo usan el agente,
+el panel y la página de reservas. Prohibido un segundo calculador de slots en el frontend o en el
+adapter de WhatsApp.
 
 ## 2. Un solo flujo de cobro de seña
 
-Todo cobro de seña ocurre por WhatsApp con verificación **manual** de la dueña. Ningún otro canal
-cobra por su cuenta: la página de reservas agenda y, si el servicio requiere seña, deriva a WhatsApp.
-Sin pasarelas ni verificación bancaria automática en V1.
+Todo cobro de seña ocurre por WhatsApp con verificación **manual**. La página de reservas agenda y,
+si el servicio requiere seña, deriva a WhatsApp. Sin pasarelas ni verificación bancaria automática en V1.
 
-Una cita con seña requerida **no** pasa a confirmada sin verificación explícita (`Deposit` verificado).
+Una cita con seña requerida **no** pasa a `confirmed` sin `Deposit` verificado
+(`VerifyDepositUseCase`).
 
 ## 3. Integridad del saldo de paquetes
 
-El saldo de sesiones (`remainingSessions`) nunca debe desincronizarse de las citas atendidas.
-Descontar sesión solo al marcar la cita como atendida, en un solo lugar del dominio — no en el
-adaptador de WhatsApp ni en el controller.
+`remainingSessions` nunca se desincroniza de las citas atendidas. Descontar sesión **solo** en
+`MarkAppointmentAttendedUseCase`, en la misma transacción — nunca en el adapter WA ni en el controller.
 
 ## 4. Nada se borra
 
-Cancelaciones, plantones (`NoShow`) y cortes por falta de pago de la suscripción SaaS cambian
-**estados**, no eliminan filas. Soft-delete / status transitions; no `DELETE` de citas, depósitos ni
-paquetes por flujos de negocio.
+Cancelaciones, plantones (`no_show`) y cortes de suscripción SaaS cambian **estados**, no eliminan
+filas. No `DELETE` de citas, depósitos ni paquetes por flujos de negocio.
 
 ## 5. Transparencia del agente y sin consejo médico
 
-El agente nunca se hace pasar por humano. Si preguntan, confirma que es asistente virtual.
-No da indicaciones médicas ni estéticas personalizadas; redirige a la profesional y/o escala
-(`Handoff`). El nombre visible del agente es configuración (`agentName`, default `"Vale"`), no un
-literal hardcodeado en la lógica.
+El agente no se hace pasar por humano. No da indicaciones médicas ni estéticas personalizadas;
+redirige / `Handoff`. Tampoco dice que puede escuchar audios ni ver imágenes: el canal es solo texto.
+Nombre visible = `BusinessConfig.agentName` (default `"Vale"`), no literal hardcodeado en la lógica.
+
+Estas reglas viven en la **capa de plataforma** del system prompt y son monótonas: el rubro y el negocio
+pueden **agregar** restricciones, nunca quitarlas. Ninguna configuración de un tenant —`agentPolicy.businessNotes`
+incluido— puede contradecirlas, y `SystemPromptBuilder` se niega a componer un prompt sin esa capa
+(`PromptPlatformLayerMissingError`). El texto de los prompts no se escribe suelto en un servicio: se
+compone por capas desde `PromptCatalogPort`.
 
 ## 6. El pago / verificación corta lo pendiente
 
-Cuando una seña se verifica o una cita se cancela/libera, cancelá recordatorios y deadlines de seña
-ya programados para esa cita (incluida la carrera verificación-vs-envío). Re-verificar el estado
-**en el momento del envío**, no confiar en el estado al programar.
+Al verificar seña o cancelar/liberar una cita, cancelá reminders y deadlines ya programados
+(incluida la carrera verificación-vs-envío). Re-verificar estado **en el momento del envío**.
 
 ## 7. Idempotencia
 
-Los crons y webhooks corren más de una vez. Toda generación debe ser idempotente por clave de negocio:
+- Reminders: unique `(appointment_id, reminder_kind)` en DB.
+- Mensajes entrantes: dedupe por id del proveedor (`Message.providerMessageId`).
+- Liberación por seña no pagada: una sola transición a `released`.
 
-- Recordatorios: único por `(appointment_id, reminder_kind)` (o equivalente) con constraint en DB.
-- Webhooks / mensajes entrantes de WhatsApp: dedupe por id del mensaje del proveedor.
-- Liberación por seña no pagada: un solo transition a liberada por cita.
-
-La constraint va en la base. Un `SELECT` antes del `INSERT` no es idempotencia.
+Constraint en la base. Un `SELECT` antes del `INSERT` no es idempotencia.
 
 ## 8. Handoff y pausa del bot
 
-Cuando el cliente pide humano, el agente no entiende tras 2 intentos, o el tema está fuera de alcance
-(reclamos, médico), marcar la conversación, notificar a la dueña y **dejar de responder** hasta que
-ella reactive el bot. La dueña puede pausar/reactivar en cualquier conversación.
+Pedido de humano, 2 fallos de entendimiento, o tema fuera de alcance → marcar conversación,
+notificar dueña, `Conversation.botPaused = true` y `botPausedAt = now`. El worker del agente
+**no** llama al LLM mientras esté pausado, salvo auto-resume: si la clienta escribe de nuevo y
+pasó `BusinessConfig.agentPolicy.handoffAutoResumeMinutes` (0 = desactivado) sin actividad del
+staff desde `botPausedAt`, el worker reanuda el bot, audita `conversation_bot_resumed` con
+`reason: auto_timeout`, envía un mensaje puente y continúa. Resume manual del panel sigue
+disponible en cualquier momento. Un reply manual del staff reinicia `botPausedAt`.
 
 ## 9. La plata nunca nos toca
 
-Ningún flujo custodia, recibe ni redirige fondos. Generamos/enviamos el QR del banco del negocio y
-registramos verificación manual. Si una tarea parece requerir mover dinero, está mal entendida.
+Ningún flujo custodia ni mueve fondos. QR del banco del negocio + verificación manual.
+
+## 10. Mensajería solo por puertos
+
+Application y domain **no** importan Evolution ni SDKs de WhatsApp. Envío → `MessagingPort`.
+QR / estado de sesión → `WhatsAppSessionPort`. LLM → `LlmPort`. Media → `ObjectStoragePort`.
+
+El webhook ACK es rápido; el trabajo pesado (LLM, booking) va a BullMQ con `runWithTenant`.

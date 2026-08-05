@@ -7,7 +7,6 @@ import {
   UpdateTenantData,
 } from '@domain/tenants/repositories/tenant.repository';
 import { Tenant } from '@domain/tenants/entities/tenant.entity';
-import { DEFAULT_SEND_WINDOW_CONFIG } from '@domain/tenants/value-objects/send-window-config.vo';
 import { DrizzleService } from '../drizzle/drizzle.service';
 import { tenants } from '../drizzle/schema';
 import { TenantMapper } from '../drizzle/mappers/tenant.mapper';
@@ -23,11 +22,9 @@ export class DrizzleTenantRepository implements TenantRepository {
         .insert(tenants)
         .values({
           name: data.name,
-          vertical: data.vertical,
-          timezone: data.timezone,
-          whatsappPhone: data.whatsappPhone,
+          timezone: data.timezone ?? 'America/La_Paz',
           plan: data.plan,
-          sendWindowConfig: data.sendWindowConfig ?? DEFAULT_SEND_WINDOW_CONFIG,
+          status: data.status,
         })
         .returning();
 

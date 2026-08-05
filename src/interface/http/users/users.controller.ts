@@ -34,14 +34,14 @@ export class UsersController {
 
   @Post()
   @Auth(Role.OWNER)
-  @ApiOperation({ summary: 'Crea un usuario en el negocio del token' })
+  @ApiOperation({ summary: 'Creates a user in the business of the token' })
   async create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     return UserResponseDto.from(await this.createUser.execute(dto));
   }
 
   @Get()
   @Auth(Role.OWNER, Role.STAFF)
-  @ApiOperation({ summary: 'Lista los usuarios del negocio del token' })
+  @ApiOperation({ summary: 'Lists the users of the business of the token' })
   async findAll(): Promise<UserResponseDto[]> {
     const users = await this.listUsers.execute();
 
@@ -50,7 +50,7 @@ export class UsersController {
 
   @Patch(':id/role')
   @Auth(Role.OWNER)
-  @ApiOperation({ summary: 'Cambia el rol de un usuario del negocio' })
+  @ApiOperation({ summary: 'Changes the role of a user of the business' })
   async changeRole(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: UpdateUserRoleDto,
@@ -60,7 +60,7 @@ export class UsersController {
 
   @Delete(':id')
   @Auth(Role.OWNER)
-  @ApiOperation({ summary: 'Desactiva un usuario (no se borra el registro)' })
+  @ApiOperation({ summary: 'Deactivates a user (the record is not deleted)' })
   async deactivate(
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<UserResponseDto> {

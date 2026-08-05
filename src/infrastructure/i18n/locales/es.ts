@@ -29,5 +29,38 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.TENANT_CONTEXT_MISSING]:
     'Ocurrió un error interno. Ya estamos revisándolo.',
   [ErrorCode.SEED_DISABLED]: 'El seed está deshabilitado en este entorno.',
+  [ErrorCode.MESSAGING_NOT_CONFIGURED]:
+    'La mensajería de WhatsApp todavía no está configurada.',
+  [ErrorCode.EVOLUTION_API_ERROR]:
+    'No pudimos comunicarnos con WhatsApp. Intentá nuevamente.',
+  [ErrorCode.WHATSAPP_SESSION_NOT_CONNECTED]:
+    'El negocio todavía no vinculó su WhatsApp.',
+  [ErrorCode.WHATSAPP_SESSION_ALREADY_CONNECTED]:
+    'El WhatsApp ya está vinculado. No hace falta escanear otro código.',
+  [ErrorCode.LLM_NOT_CONFIGURED]:
+    'El proveedor de IA todavía no está configurado.',
+  [ErrorCode.LLM_PROVIDER_ERROR]:
+    'El asistente no pudo procesar el mensaje. Intentá nuevamente.',
+  [ErrorCode.AGENT_PROMPT_INCOMPLETE]:
+    'El asistente no está configurado correctamente.',
+  [ErrorCode.SLOT_UNAVAILABLE]: 'Ese horario ya no está disponible.',
+  [ErrorCode.APPOINTMENT_NOT_FOUND]: 'No encontramos esa cita.',
+  [ErrorCode.INVALID_APPOINTMENT_TRANSITION]:
+    'El estado actual de la cita no permite ese cambio.',
+  [ErrorCode.CONVERSATION_NOT_FOUND]: 'No encontramos esa conversación.',
+  [ErrorCode.PROFESSIONAL_NOT_FOUND]: 'No encontramos esa profesional.',
+  [ErrorCode.SERVICE_NOT_FOUND]: 'No encontramos ese servicio.',
+  [ErrorCode.CLIENT_NOT_FOUND]: 'No encontramos esa clienta.',
+  [ErrorCode.BUSINESS_CONFIG_NOT_FOUND]: 'Falta la configuración del negocio.',
+  [ErrorCode.SCHEDULE_BLOCK_NOT_FOUND]: 'No encontramos ese bloqueo de agenda.',
+  [ErrorCode.INVALID_WEEKLY_HOURS]:
+    'Los horarios deben tener formato HH:mm y terminar después de comenzar.',
+  [ErrorCode.INVALID_DEPOSIT_CONFIGURATION]:
+    'Configurá exactamente un monto o un porcentaje cuando el servicio requiera seña.',
+  [ErrorCode.INVALID_AMOUNT]:
+    'El monto debe ser un número positivo con hasta dos decimales.',
+  [ErrorCode.INVALID_TIME_RANGE]:
+    'La hora de finalización debe ser posterior a la hora de inicio.',
+  [ErrorCode.INVALID_WEBHOOK]: 'Webhook inválido.',
   [ErrorCode.INTERNAL_ERROR]: 'Ocurrió un error interno. Intentá de nuevo.',
 };

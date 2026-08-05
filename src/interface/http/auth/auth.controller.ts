@@ -24,7 +24,7 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: 'Inicia sesión y devuelve el token del tenant' })
+  @ApiOperation({ summary: 'Logs in and returns the tenant token' })
   async login(
     @Body() dto: LoginDto,
     @Ip() ip: string,
@@ -34,7 +34,7 @@ export class AuthController {
 
   @Get('me')
   @Auth(Role.OWNER, Role.STAFF, Role.SUPERADMIN)
-  @ApiOperation({ summary: 'Devuelve el usuario autenticado' })
+  @ApiOperation({ summary: 'Returns the authenticated user' })
   me(@GetUser() user: User): UserResponseDto {
     return UserResponseDto.from(user.toPublic());
   }
