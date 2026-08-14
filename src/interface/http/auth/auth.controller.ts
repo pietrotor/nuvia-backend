@@ -12,7 +12,7 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { LoginDto } from '@application/auth/dto/login.dto';
 import { LoginUseCase } from '@application/auth/use-cases/login.use-case';
 import { User } from '@domain/users/entities/user.entity';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth, GetUser } from '../common/decorators';
 import { UserResponseDto } from '../users/dto/user-response.dto';
 import { LoginResponseDto } from './dto/login-response.dto';
@@ -33,7 +33,7 @@ export class AuthController {
   }
 
   @Get('me')
-  @Auth(Role.OWNER, Role.STAFF, Role.SUPERADMIN)
+  @Auth(Permission.TENANT_READ, Permission.TENANTS_ADMIN)
   @ApiOperation({ summary: 'Returns the authenticated user' })
   me(@GetUser() user: User): UserResponseDto {
     return UserResponseDto.from(user.toPublic());

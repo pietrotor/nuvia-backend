@@ -1,7 +1,12 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 
 import { ListClientAppointmentsUseCase } from '@application/appointments/use-cases/list-client-appointments.use-case';
+import {
+  BRANCH_REPOSITORY,
+  BranchRepository,
+} from '@domain/branches/repositories/branch.repository';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
+import { clockLabel } from './clock-label';
 
 @Injectable()
 export class ListMyAppointmentsAgentTool implements AgentTool {
@@ -19,6 +24,8 @@ export class ListMyAppointmentsAgentTool implements AgentTool {
 
   constructor(
     private readonly listClientAppointments: ListClientAppointmentsUseCase,
+    @Inject(BRANCH_REPOSITORY)
+    private readonly branches: BranchRepository,
   ) {}
 
   async execute(
@@ -30,9 +37,27 @@ export class ListMyAppointmentsAgentTool implements AgentTool {
       onlyUpcoming: true,
     });
 
+    const branchIds = [
+      ...new Set(
+        appointments
+          .map((view) => view.appointment.branchId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const branchNameById = new Map<string, string>();
+    await Promise.all(
+      branchIds.map(async (id) => {
+        const branch = await this.branches.findById(id);
+        if (branch) branchNameById.set(id, branch.name);
+      }),
+    );
+
     return {
       status: 'success',
       summary: `${appointments.length} citas próximas.`,
+      offerableTimes: appointments.map((view) =>
+        clockLabel(view.appointment.startsAt, context.timezone),
+      ),
       // Names, not just ids: the agent talks to the client about "Limpieza facial
       // con Camila", while the ids are what it needs to look up availability.
       data: appointments.map((view) => ({
@@ -41,6 +66,10 @@ export class ListMyAppointmentsAgentTool implements AgentTool {
         serviceId: view.service.id,
         professional: view.professional.name,
         professionalId: view.professional.id,
+        branchId: view.appointment.branchId,
+        branchName: view.appointment.branchId
+          ? (branchNameById.get(view.appointment.branchId) ?? null)
+          : null,
         startsAt: view.appointment.startsAt,
         status: view.appointment.status,
       })),

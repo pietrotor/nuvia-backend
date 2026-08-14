@@ -1,7 +1,10 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
+import { BranchResolver } from '@application/branches/services/branch-resolver.service';
 import { AppointmentSlotValidator } from '../services/appointment-slot-validator.service';
 import { ScheduleContextResolver } from '../services/schedule-context-resolver.service';
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { Money } from '@domain/common/value-objects/money.vo';
 import { BookAppointmentUseCase } from './book-appointment.use-case';
 import { AppointmentRepository } from '@domain/appointments/repositories/appointment.repository';
 import {
@@ -9,6 +12,12 @@ import {
   AppointmentStatus,
 } from '@domain/appointments/entities/appointment.entity';
 import { SlotUnavailableError } from '@domain/appointments/exceptions/appointment.exceptions';
+import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
+import { Branch } from '@domain/branches/entities/branch.entity';
+import { BranchProfessional } from '@domain/branches/entities/branch-professional.entity';
+import { BranchService } from '@domain/branches/entities/branch-service.entity';
+import { BranchProfessionalRepository } from '@domain/branches/repositories/branch-professional.repository';
+import { BranchServiceRepository } from '@domain/branches/repositories/branch-service.repository';
 import { ProfessionalRepository } from '@domain/professionals/repositories/professional.repository';
 import { Professional } from '@domain/professionals/entities/professional.entity';
 import { ServiceRepository } from '@domain/services/repositories/service.repository';
@@ -37,6 +46,20 @@ const hours: WeeklyHours = {
   sun: null,
 };
 
+const branch = new Branch({
+  id: 'b1',
+  tenantId: 't1',
+  name: 'Centro',
+  slug: 'centro',
+  address: null,
+  mapsUrl: null,
+  phone: null,
+  weeklyHours: hours,
+  timezone: null,
+  isPrimary: true,
+  isActive: true,
+});
+
 describe('BookAppointmentUseCase', () => {
   let appointmentRepository: jest.Mocked<
     Pick<AppointmentRepository, 'create' | 'findOverlapping'>
@@ -53,6 +76,7 @@ describe('BookAppointmentUseCase', () => {
     Pick<BusinessConfigRepository, 'findByTenant'>
   >;
   let tenantRepository: jest.Mocked<Pick<TenantRepository, 'findById'>>;
+  let now: Date;
   let clock: ClockPort;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
   let useCase: BookAppointmentUseCase;
@@ -70,16 +94,48 @@ describe('BookAppointmentUseCase', () => {
     };
     businessConfigRepository = { findByTenant: jest.fn() };
     tenantRepository = { findById: jest.fn() };
-    clock = { now: () => new Date('2026-08-02T00:00:00.000Z') };
+    now = new Date('2026-08-02T00:00:00.000Z');
+    clock = { now: () => now };
     audit = { record: jest.fn() };
+
+    const branchResolver = {
+      resolve: jest.fn().mockResolvedValue(branch),
+    };
+    const branchServiceRepository = {
+      findByBranchAndService: jest.fn().mockResolvedValue(
+        new BranchService({
+          tenantId: 't1',
+          branchId: branch.id,
+          serviceId: 's1',
+          priceOverrideAmount: null,
+          depositAmountOverrideAmount: null,
+          depositQrId: null,
+          isActive: true,
+        }),
+      ),
+    };
+    const branchProfessionalRepository = {
+      findByBranchAndProfessional: jest.fn().mockResolvedValue(
+        new BranchProfessional({
+          tenantId: 't1',
+          branchId: branch.id,
+          professionalId: 'p1',
+          weeklyHours: hours,
+          isActive: true,
+        }),
+      ),
+    };
 
     useCase = new BookAppointmentUseCase(
       appointmentRepository as unknown as AppointmentRepository,
       clientRepository as unknown as ClientRepository,
       new AppointmentSlotValidator(
         new ScheduleContextResolver(
+          branchResolver as unknown as BranchResolver,
           professionalRepository as unknown as ProfessionalRepository,
           serviceRepository as unknown as ServiceRepository,
+          branchServiceRepository as unknown as BranchServiceRepository,
+          branchProfessionalRepository as unknown as BranchProfessionalRepository,
           businessConfigRepository as unknown as BusinessConfigRepository,
           tenantRepository as unknown as TenantRepository,
           clock,
@@ -88,6 +144,7 @@ describe('BookAppointmentUseCase', () => {
         scheduleBlockRepository as unknown as ScheduleBlockRepository,
       ),
       audit as unknown as AuditRecorder,
+      { changed: jest.fn() } as unknown as AgendaEventPublisher,
     );
 
     clientRepository.findById.mockResolvedValue(
@@ -104,7 +161,6 @@ describe('BookAppointmentUseCase', () => {
         id: 'p1',
         tenantId: 't1',
         name: 'Camila',
-        weeklyHours: hours,
         isActive: true,
       }),
     );
@@ -119,6 +175,8 @@ describe('BookAppointmentUseCase', () => {
         requiresDeposit: false,
         depositAmount: null,
         depositPercent: null,
+        depositQrId: null,
+        clientChoosesProfessional: true,
         isActive: true,
         professionalIds: ['p1'],
       }),
@@ -131,7 +189,6 @@ describe('BookAppointmentUseCase', () => {
         agentName: 'Vale',
         tone: AgentTone.WARM,
         currency: Currency.BOB,
-        businessHours: hours,
         bookingPolicy: {
           minLeadTimeHours: 2,
           cancelRescheduleHours: 24,
@@ -154,12 +211,14 @@ describe('BookAppointmentUseCase', () => {
     const created = new Appointment({
       id: 'a1',
       tenantId: 't1',
+      branchId: branch.id,
       clientId: 'c1',
       professionalId: 'p1',
       serviceId: 's1',
       startsAt: new Date('2026-08-03T15:00:00.000Z'),
       endsAt: new Date('2026-08-03T16:00:00.000Z'),
       status: AppointmentStatus.CONFIRMED,
+      price: Money.of('150.00', Currency.BOB),
     });
     appointmentRepository.create.mockResolvedValue(created);
 
@@ -171,7 +230,13 @@ describe('BookAppointmentUseCase', () => {
     });
 
     expect(result.status).toBe(AppointmentStatus.CONFIRMED);
-    expect(appointmentRepository.create).toHaveBeenCalled();
+    expect(appointmentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        branchId: branch.id,
+        price: '150.00',
+        currency: Currency.BOB,
+      }),
+    );
   });
 
   it('rejects an active overlap', async () => {
@@ -179,12 +244,14 @@ describe('BookAppointmentUseCase', () => {
       new Appointment({
         id: 'a0',
         tenantId: 't1',
+        branchId: branch.id,
         clientId: 'c2',
         professionalId: 'p1',
         serviceId: 's1',
         startsAt: new Date('2026-08-03T15:00:00.000Z'),
         endsAt: new Date('2026-08-03T16:00:00.000Z'),
         status: AppointmentStatus.CONFIRMED,
+        price: Money.of('150.00', Currency.BOB),
       }),
     ]);
 
@@ -210,6 +277,8 @@ describe('BookAppointmentUseCase', () => {
         requiresDeposit: false,
         depositAmount: null,
         depositPercent: null,
+        depositQrId: null,
+        clientChoosesProfessional: true,
         isActive: false,
         professionalIds: ['p1'],
       }),
@@ -234,5 +303,136 @@ describe('BookAppointmentUseCase', () => {
         startsAt: '2026-08-02T01:00:00.000Z',
       }),
     ).rejects.toBeInstanceOf(SlotUnavailableError);
+  });
+
+  it('holds the lead time against the client channel', async () => {
+    now = new Date('2026-08-03T14:00:00.000Z');
+
+    await expect(
+      useCase.execute(
+        {
+          clientId: 'c1',
+          professionalId: 'p1',
+          serviceId: 's1',
+          startsAt: '2026-08-03T14:30:00.000Z',
+        },
+        BookingActor.CLIENT,
+      ),
+    ).rejects.toBeInstanceOf(SlotUnavailableError);
+  });
+
+  it('lets staff book inside the lead time window', async () => {
+    now = new Date('2026-08-03T14:00:00.000Z');
+    appointmentRepository.create.mockResolvedValue(
+      new Appointment({
+        id: 'a1',
+        tenantId: 't1',
+        branchId: branch.id,
+        clientId: 'c1',
+        professionalId: 'p1',
+        serviceId: 's1',
+        startsAt: new Date('2026-08-03T14:30:00.000Z'),
+        endsAt: new Date('2026-08-03T15:30:00.000Z'),
+        status: AppointmentStatus.CONFIRMED,
+        price: Money.of('150.00', Currency.BOB),
+      }),
+    );
+
+    const result = await useCase.execute(
+      {
+        clientId: 'c1',
+        professionalId: 'p1',
+        serviceId: 's1',
+        startsAt: '2026-08-03T14:30:00.000Z',
+      },
+      BookingActor.STAFF,
+    );
+
+    expect(result.status).toBe(AppointmentStatus.CONFIRMED);
+  });
+
+  it('still refuses a past slot to staff', async () => {
+    now = new Date('2026-08-03T14:00:00.000Z');
+
+    await expect(
+      useCase.execute(
+        {
+          clientId: 'c1',
+          professionalId: 'p1',
+          serviceId: 's1',
+          startsAt: '2026-08-03T13:00:00.000Z',
+        },
+        BookingActor.STAFF,
+      ),
+    ).rejects.toBeInstanceOf(SlotUnavailableError);
+  });
+
+  it('lets staff book shorter than the service catalog', async () => {
+    appointmentRepository.create.mockImplementation(async (data) =>
+      Promise.resolve(
+        new Appointment({
+          id: 'a1',
+          tenantId: 't1',
+          branchId: data.branchId!,
+          clientId: data.clientId,
+          professionalId: data.professionalId,
+          serviceId: data.serviceId,
+          startsAt: data.startsAt,
+          endsAt: data.endsAt,
+          status: data.status,
+          price: Money.of(data.price, data.currency),
+        }),
+      ),
+    );
+
+    const result = await useCase.execute(
+      {
+        clientId: 'c1',
+        professionalId: 'p1',
+        serviceId: 's1',
+        startsAt: '2026-08-03T15:00:00.000Z',
+        durationMinutes: 45,
+      },
+      BookingActor.STAFF,
+    );
+
+    expect(result.endsAt.toISOString()).toBe('2026-08-03T15:45:00.000Z');
+    expect(appointmentRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        endsAt: new Date('2026-08-03T15:45:00.000Z'),
+      }),
+    );
+  });
+
+  it('ignores a duration override from the client channel', async () => {
+    appointmentRepository.create.mockImplementation(async (data) =>
+      Promise.resolve(
+        new Appointment({
+          id: 'a1',
+          tenantId: 't1',
+          branchId: data.branchId!,
+          clientId: data.clientId,
+          professionalId: data.professionalId,
+          serviceId: data.serviceId,
+          startsAt: data.startsAt,
+          endsAt: data.endsAt,
+          status: data.status,
+          price: Money.of(data.price, data.currency),
+        }),
+      ),
+    );
+
+    const result = await useCase.execute(
+      {
+        clientId: 'c1',
+        professionalId: 'p1',
+        serviceId: 's1',
+        startsAt: '2026-08-03T15:00:00.000Z',
+        durationMinutes: 45,
+      },
+      BookingActor.CLIENT,
+    );
+
+    expect(result.endsAt.toISOString()).toBe('2026-08-03T16:00:00.000Z');
   });
 });

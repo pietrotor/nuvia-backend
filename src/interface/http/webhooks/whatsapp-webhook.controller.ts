@@ -18,7 +18,10 @@ import {
   BUSINESS_CONFIG_REPOSITORY,
   BusinessConfigRepository,
 } from '@domain/business-config/repositories/business-config.repository';
-import { INBOUND_MESSAGES_QUEUE } from '@infrastructure/queues/queue.constants';
+import {
+  INBOUND_MESSAGE_JOB,
+  INBOUND_MESSAGES_QUEUE,
+} from '@infrastructure/queues/queue.constants';
 import { InboundMessageJob } from '@infrastructure/queues/processors/inbound-messages.processor';
 
 @ApiExcludeController()
@@ -67,7 +70,7 @@ export class WhatsAppWebhookController {
     const providerMessageId = this.resolveProviderMessageId(payload);
 
     await this.inboundQueue.add(
-      'inbound',
+      INBOUND_MESSAGE_JOB,
       { tenantId: config.tenantId, providerMessageId, payload },
       {
         jobId: `${config.tenantId}-${providerMessageId}`,

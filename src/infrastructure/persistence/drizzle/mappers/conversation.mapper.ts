@@ -15,6 +15,7 @@ export class ConversationMapper {
     return new Conversation({
       id: row.id,
       tenantId: row.tenantId,
+      branchId: row.branchId,
       clientId: row.clientId,
       clientPhoneE164: row.clientPhoneE164,
       botPaused: row.botPaused,

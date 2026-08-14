@@ -15,9 +15,15 @@ export interface LlmToolDefinition {
   parameters: Record<string, unknown>;
 }
 
+// "any" makes the provider prefill the assistant turn so the model has to call one of the
+// tools. It cannot answer in prose on that round, which is the point: it is how we make an
+// action happen instead of letting the model narrate one it never took.
+export type LlmToolChoice = 'auto' | 'any';
+
 export interface LlmChatInput {
   messages: LlmMessage[];
   tools?: LlmToolDefinition[];
+  toolChoice?: LlmToolChoice;
 }
 
 export interface LlmToolCall {

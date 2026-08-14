@@ -50,7 +50,12 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
               type: 'function',
               function: tool,
             })),
-            tool_choice: input.tools?.length ? 'auto' : undefined,
+            // "required" is this API's spelling of Anthropic's "any": call some tool.
+            tool_choice: input.tools?.length
+              ? input.toolChoice === 'any'
+                ? 'required'
+                : 'auto'
+              : undefined,
             temperature: 0.2,
           }),
           signal: AbortSignal.timeout(25_000),

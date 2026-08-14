@@ -11,6 +11,7 @@ import { sql } from 'drizzle-orm';
 
 import { tenants } from './tenant.schema';
 import { professionals } from './professional.schema';
+import { branches } from './branch.schema';
 
 export const scheduleBlocks = pgTable(
   'schedule_blocks',
@@ -19,6 +20,11 @@ export const scheduleBlocks = pgTable(
     tenantId: uuid('tenant_id')
       .notNull()
       .references(() => tenants.id, { onDelete: 'cascade' }),
+    // Null + null professional = whole business; branch only = that location closed;
+    // professional only = absent everywhere; both = absent at that location.
+    branchId: uuid('branch_id').references(() => branches.id, {
+      onDelete: 'cascade',
+    }),
     professionalId: uuid('professional_id').references(() => professionals.id, {
       onDelete: 'cascade',
     }),
@@ -37,6 +43,7 @@ export const scheduleBlocks = pgTable(
   (t) => [
     check('schedule_blocks_valid_time_range', sql`${t.endsAt} > ${t.startsAt}`),
     index('schedule_blocks_tenant_idx').on(t.tenantId),
+    index('schedule_blocks_branch_idx').on(t.branchId),
     index('schedule_blocks_professional_starts_idx').on(
       t.professionalId,
       t.startsAt,

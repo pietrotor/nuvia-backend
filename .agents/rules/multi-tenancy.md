@@ -16,9 +16,10 @@ tenantId: uuid('tenant_id').notNull().references(() => tenants.id, { onDelete: '
 // + index('{table}_tenant_idx').on(t.tenantId)
 ```
 
-Sin excepciones salvo `tenants` misma. `users` y `audit_logs` lo tienen nullable porque el `superadmin` no
-pertenece a ningún negocio; cualquier otra tabla lo lleva `notNull()`. Si te parece que una tabla no
-necesita `tenant_id` porque "es global", preguntá antes.
+Sin excepciones salvo `tenants` misma y el catálogo global `plans` (administrado por superadmin, sin
+`tenant_id`). `users` y `audit_logs` lo tienen nullable porque el `superadmin` no pertenece a ningún
+negocio; cualquier otra tabla lo lleva `notNull()`. Si te parece que una tabla no necesita `tenant_id`
+porque "es global", preguntá antes — hoy la única excepción de catálogo es `plans`.
 
 ## El tenant sale del token, nunca del request
 

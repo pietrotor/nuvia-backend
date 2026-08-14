@@ -20,6 +20,9 @@ import {
   ServiceRepository,
 } from '@domain/services/repositories/service.repository';
 import { CreateServiceDto } from '../dto/create-service.dto';
+import { DepositQrAssignmentValidator } from '../services/deposit-qr-assignment-validator.service';
+import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
+import { PlanCap } from '@domain/subscriptions/value-objects/plan-config.vo';
 
 @Injectable()
 export class CreateServiceUseCase {
@@ -30,19 +33,27 @@ export class CreateServiceUseCase {
     private readonly professionalRepository: ProfessionalRepository,
     @Inject(BUSINESS_CONFIG_REPOSITORY)
     private readonly businessConfigRepository: BusinessConfigRepository,
+    private readonly depositQrAssignment: DepositQrAssignmentValidator,
     private readonly audit: AuditRecorder,
+    private readonly entitlements: PlanEntitlements,
   ) {}
 
   async execute(dto: CreateServiceDto): Promise<Service> {
+    await this.entitlements.assertWithinCap(PlanCap.SERVICES);
     await this.assertProfessionalsExist(dto.professionalIds);
 
     const requiresDeposit = dto.requiresDeposit ?? false;
     const depositAmount = dto.depositAmount ?? null;
     const depositPercent = dto.depositPercent ?? null;
+    const depositQrId = dto.depositQrId ?? null;
     assertValidDepositConfiguration({
       requiresDeposit,
       depositAmount,
       depositPercent,
+    });
+    await this.depositQrAssignment.assertAssignable({
+      depositQrId,
+      requiresDeposit,
     });
 
     const currency = dto.currency ?? (await this.businessCurrency());
@@ -53,6 +64,7 @@ export class CreateServiceUseCase {
       requiresDeposit,
       depositAmount,
       depositPercent,
+      depositQrId,
     });
 
     await this.audit.record({

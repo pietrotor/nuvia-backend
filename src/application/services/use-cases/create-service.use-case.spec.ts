@@ -2,7 +2,6 @@ import { AuditRecorder } from '@application/audit/services/audit-recorder.servic
 import {
   AgentTone,
   BusinessConfig,
-  WeeklyHours,
 } from '@domain/business-config/entities/business-config.entity';
 import { BusinessConfigRepository } from '@domain/business-config/repositories/business-config.repository';
 import { Currency } from '@domain/common/value-objects/currency.vo';
@@ -13,17 +12,9 @@ import {
   CreateServiceData,
   ServiceRepository,
 } from '@domain/services/repositories/service.repository';
+import { DepositQrAssignmentValidator } from '../services/deposit-qr-assignment-validator.service';
 import { CreateServiceUseCase } from './create-service.use-case';
-
-const hours: WeeklyHours = {
-  mon: { start: '09:00', end: '18:00' },
-  tue: null,
-  wed: null,
-  thu: null,
-  fri: null,
-  sat: null,
-  sun: null,
-};
+import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
 
 const businessConfig = (currency: Currency): BusinessConfig =>
   new BusinessConfig({
@@ -33,7 +24,6 @@ const businessConfig = (currency: Currency): BusinessConfig =>
     agentName: 'Vale',
     tone: AgentTone.WARM,
     currency,
-    businessHours: hours,
     bookingPolicy: {
       minLeadTimeHours: 2,
       cancelRescheduleHours: 24,
@@ -70,6 +60,8 @@ describe('CreateServiceUseCase', () => {
             requiresDeposit: false,
             depositAmount: null,
             depositPercent: null,
+            depositQrId: null,
+            clientChoosesProfessional: true,
             isActive: true,
             professionalIds: data.professionalIds,
           }),
@@ -88,11 +80,23 @@ describe('CreateServiceUseCase', () => {
       record: jest.fn(),
     };
 
+    const depositQrAssignment: jest.Mocked<
+      Pick<DepositQrAssignmentValidator, 'assertAssignable'>
+    > = {
+      assertAssignable: jest.fn(),
+    };
+    const entitlements: jest.Mocked<Pick<PlanEntitlements, 'assertWithinCap'>> =
+      {
+        assertWithinCap: jest.fn().mockResolvedValue(undefined),
+      };
+
     useCase = new CreateServiceUseCase(
       serviceRepository as unknown as ServiceRepository,
       professionalRepository as unknown as ProfessionalRepository,
       businessConfigRepository as unknown as BusinessConfigRepository,
+      depositQrAssignment as unknown as DepositQrAssignmentValidator,
       audit as unknown as AuditRecorder,
+      entitlements as unknown as PlanEntitlements,
     );
   });
 

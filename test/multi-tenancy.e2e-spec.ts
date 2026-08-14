@@ -7,6 +7,13 @@ import { ErrorCode } from '../src/domain/common/exceptions';
 
 const PASSWORD = 'Secreta123';
 
+// Smallest valid PNG. Uploads are rejected unless the bytes really are the declared
+// image type, and whatever is stored here can end up sent to a client over WhatsApp.
+const PNG_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==',
+  'base64',
+);
+
 // Runs against the local database: it seeds two tenants and checks that nothing
 // crosses from one to the other.
 describe('Multi-tenancy (e2e)', () => {
@@ -62,7 +69,11 @@ describe('Multi-tenancy (e2e)', () => {
     const emailsOf = (body: { email: string }[]) =>
       body.map((user) => user.email).sort();
 
-    expect(emailsOf(ritmo.body)).toEqual(['ana@glow.test', 'luis@glow.test']);
+    expect(emailsOf(ritmo.body)).toEqual([
+      'ana@glow.test',
+      'luis@glow.test',
+      'patricia@glow.test',
+    ]);
     expect(emailsOf(pasitos.body)).toEqual([
       'marta@luna.test',
       'rocio@luna.test',
@@ -145,7 +156,7 @@ describe('Multi-tenancy (e2e)', () => {
     );
   });
 
-  it('business configuration is tenant-scoped and owner-only', async () => {
+  it('business configuration is tenant-scoped, readable by staff and written by the owner', async () => {
     const ritmo = await request(app.getHttpServer())
       .get('/api/v1/business-config')
       .set('Authorization', `Bearer ${ritmoOwner}`)
@@ -158,6 +169,13 @@ describe('Multi-tenancy (e2e)', () => {
     expect(ritmo.body.slug).toBe('estetica-glow');
     expect(pasitos.body.slug).toBe('spa-luna');
     expect(ritmo.body).not.toHaveProperty('tenantId');
+
+    // Staff reads it to paint the agenda grid, but cannot change it.
+    const staffView = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${ritmoStaff}`)
+      .expect(200);
+    expect(staffView.body.slug).toBe('estetica-glow');
 
     await request(app.getHttpServer())
       .patch('/api/v1/business-config')
@@ -241,25 +259,26 @@ describe('Multi-tenancy (e2e)', () => {
       .set('Authorization', `Bearer ${ritmoOwner}`)
       .send({
         agentName: 'Nuna',
-        businessHours: {
-          mon: { start: '09:00', end: '18:00' },
-          tue: { start: '09:00', end: '18:00' },
-          wed: { start: '09:00', end: '18:00' },
-          thu: { start: '09:00', end: '18:00' },
-          fri: { start: '09:00', end: '18:00' },
-          sat: { start: '09:00', end: '13:00' },
-          sun: null,
-        },
       })
       .expect(200);
     expect(configured.body.agentName).toBe('Nuna');
+
+    const weeklyHours = {
+      mon: { start: '09:00', end: '18:00' },
+      tue: { start: '09:00', end: '18:00' },
+      wed: { start: '09:00', end: '18:00' },
+      thu: { start: '09:00', end: '18:00' },
+      fri: { start: '09:00', end: '18:00' },
+      sat: { start: '09:00', end: '13:00' },
+      sun: null,
+    };
 
     const professional = await request(app.getHttpServer())
       .post('/api/v1/professionals')
       .set('Authorization', `Bearer ${ritmoOwner}`)
       .send({
         name: 'Laura Méndez',
-        weeklyHours: configured.body.businessHours,
+        weeklyHours,
       })
       .expect(201);
 
@@ -329,6 +348,153 @@ describe('Multi-tenancy (e2e)', () => {
       .set('Authorization', `Bearer ${ritmoOwner}`)
       .send({ name: 'No permitido' })
       .expect(404);
+  });
+
+  it('never returns the client book of another business', async () => {
+    const glowClients = await request(app.getHttpServer())
+      .get('/api/v1/clients')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const lunaClients = await request(app.getHttpServer())
+      .get('/api/v1/clients')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+
+    const idsOf = (body: { data: { id: string }[] }) =>
+      body.data.map((client) => client.id);
+    const foreignClient = lunaClients.body.data[0];
+
+    expect(glowClients.body.data.length).toBeGreaterThan(0);
+    expect(idsOf(glowClients.body)).not.toContain(foreignClient.id);
+
+    // Searching by the exact name of a client of the other business finds nothing.
+    const search = await request(app.getHttpServer())
+      .get('/api/v1/clients')
+      .query({ search: foreignClient.name })
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(search.body.data).toEqual([]);
+  });
+
+  it('a client created from the panel stays in the tenant of the caller', async () => {
+    const created = await request(app.getHttpServer())
+      .post('/api/v1/clients')
+      .set('Authorization', `Bearer ${ritmoStaff}`)
+      .send({ name: 'Walk-in Glow', phoneE164: '+59170000099' })
+      .expect(201);
+
+    const lunaSearch = await request(app.getHttpServer())
+      .get('/api/v1/clients')
+      .query({ search: 'Walk-in Glow' })
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    expect(lunaSearch.body.data).toEqual([]);
+
+    // The same phone in the other business is a different client, not a conflict.
+    const lunaClient = await request(app.getHttpServer())
+      .post('/api/v1/clients')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .send({ name: 'Walk-in Luna', phoneE164: '+59170000099' })
+      .expect(201);
+    expect(lunaClient.body.id).not.toBe(created.body.id);
+
+    // Registering an existing phone again returns the client instead of failing.
+    const again = await request(app.getHttpServer())
+      .post('/api/v1/clients')
+      .set('Authorization', `Bearer ${ritmoStaff}`)
+      .send({ name: 'Otro Nombre', phoneE164: '+59170000099' })
+      .expect(201);
+    expect(again.body.id).toBe(created.body.id);
+    expect(again.body.name).toBe('Walk-in Glow');
+  });
+
+  it('keeps the payment QRs of one business out of the other', async () => {
+    const uploadQr = (token: string, label: string) =>
+      request(app.getHttpServer())
+        .post('/api/v1/deposit-qrs')
+        .set('Authorization', `Bearer ${token}`)
+        .field('label', label)
+        .attach('file', PNG_BYTES, {
+          filename: 'qr.png',
+          contentType: 'image/png',
+        });
+
+    const glowQr = await uploadQr(ritmoOwner, 'BNB Glow').expect(201);
+    await uploadQr(pasitosOwner, 'Union Luna').expect(201);
+
+    // The first QR of a business is its default: a single-QR business configures nothing.
+    expect(glowQr.body.isDefault).toBe(true);
+
+    const lunaList = await request(app.getHttpServer())
+      .get('/api/v1/deposit-qrs')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    expect(lunaList.body.map((qr: { id: string }) => qr.id)).not.toContain(
+      glowQr.body.id,
+    );
+
+    await request(app.getHttpServer())
+      .get(`/api/v1/deposit-qrs/${glowQr.body.id}/image`)
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/deposit-qrs/${glowQr.body.id}`)
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .send({ label: 'No permitido' })
+      .expect(404);
+
+    const image = await request(app.getHttpServer())
+      .get(`/api/v1/deposit-qrs/${glowQr.body.id}/image`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(image.headers['content-type']).toContain('image/png');
+
+    await request(app.getHttpServer())
+      .get('/api/v1/deposit-qrs')
+      .set('Authorization', `Bearer ${ritmoStaff}`)
+      .expect(403);
+  });
+
+  it('a service cannot be assigned the payment QR of another business', async () => {
+    const lunaQrs = await request(app.getHttpServer())
+      .get('/api/v1/deposit-qrs')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    const glowServices = await request(app.getHttpServer())
+      .get('/api/v1/services')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const withDeposit = glowServices.body.find(
+      (service: { requiresDeposit: boolean }) => service.requiresDeposit,
+    );
+
+    const foreign = await request(app.getHttpServer())
+      .patch(`/api/v1/services/${withDeposit.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ depositQrId: lunaQrs.body[0].id })
+      .expect(404);
+    expect(foreign.body.code).toBe(ErrorCode.DEPOSIT_QR_NOT_FOUND);
+
+    const glowQrs = await request(app.getHttpServer())
+      .get('/api/v1/deposit-qrs')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+
+    const assigned = await request(app.getHttpServer())
+      .patch(`/api/v1/services/${withDeposit.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ depositQrId: glowQrs.body[0].id })
+      .expect(200);
+    expect(assigned.body.depositQrId).toBe(glowQrs.body[0].id);
+
+    // Dropping the deposit drops the QR with it: the two cannot disagree.
+    const withoutDeposit = await request(app.getHttpServer())
+      .patch(`/api/v1/services/${withDeposit.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ requiresDeposit: false })
+      .expect(200);
+    expect(withoutDeposit.body.depositQrId).toBeNull();
   });
 
   it('deactivates schedule blocks without deleting or leaking them', async () => {

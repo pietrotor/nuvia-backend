@@ -14,7 +14,6 @@ import {
   AgentTone,
   AgentPolicy,
   BookingPolicy,
-  WeeklyHours,
 } from '@domain/business-config/entities/business-config.entity';
 
 import { currencyEnum } from './currency.schema';
@@ -43,14 +42,11 @@ export const businessConfigs = pgTable(
       .notNull()
       .default('default'),
     currency: currencyEnum('currency').notNull().default('BOB'),
-    address: text('address'),
     logoUrl: text('logo_url'),
     whatsappPhone: varchar('whatsapp_phone', { length: 20 }),
-    businessHours: jsonb('business_hours').$type<WeeklyHours>().notNull(),
     bookingPolicy: jsonb('booking_policy').$type<BookingPolicy>().notNull(),
     agentPolicy: jsonb('agent_policy').$type<AgentPolicy>().notNull(),
     faq: jsonb('faq').$type<Record<string, string>>().notNull().default({}),
-    staticDepositQrUrl: text('static_deposit_qr_url'),
     evolutionInstanceId: varchar('evolution_instance_id', { length: 255 }),
     evolutionInstanceName: varchar('evolution_instance_name', { length: 255 }),
     evolutionWebhookTokenHash: varchar('evolution_webhook_token_hash', {

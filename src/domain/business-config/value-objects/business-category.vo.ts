@@ -10,6 +10,7 @@ export enum BusinessCategory {
 export interface CategoryLexicon {
   client: string;
   professional: string;
+  professionalPlural: string;
   service: string;
   servicePlural: string;
   session: string;
@@ -24,6 +25,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   [BusinessCategory.DEFAULT]: {
     client: 'cliente',
     professional: 'profesional',
+    professionalPlural: 'profesionales',
     service: 'servicio',
     servicePlural: 'servicios',
     session: 'sesión',
@@ -32,6 +34,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   [BusinessCategory.ESTHETICS]: {
     client: 'clienta',
     professional: 'profesional',
+    professionalPlural: 'profesionales',
     service: 'tratamiento',
     servicePlural: 'tratamientos',
     session: 'sesión',
@@ -40,6 +43,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   [BusinessCategory.SPA]: {
     client: 'clienta',
     professional: 'terapeuta',
+    professionalPlural: 'terapeutas',
     service: 'servicio',
     servicePlural: 'servicios',
     session: 'sesión',
@@ -48,6 +52,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   [BusinessCategory.BEAUTY]: {
     client: 'clienta',
     professional: 'estilista',
+    professionalPlural: 'estilistas',
     service: 'servicio',
     servicePlural: 'servicios',
     session: 'sesión',

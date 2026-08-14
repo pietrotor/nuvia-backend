@@ -74,15 +74,6 @@ describe('SendManualMessageUseCase', () => {
           agentName: 'Vale',
           tone: AgentTone.WARM,
           currency: Currency.BOB,
-          businessHours: {
-            mon: null,
-            tue: null,
-            wed: null,
-            thu: null,
-            fri: null,
-            sat: null,
-            sun: null,
-          },
           bookingPolicy: {
             minLeadTimeHours: 2,
             cancelRescheduleHours: 24,

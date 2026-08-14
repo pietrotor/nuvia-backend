@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { Appointment } from '@domain/appointments/entities/appointment.entity';
 import { AppointmentNotFoundError } from '@domain/appointments/exceptions/appointment.exceptions';
@@ -39,6 +40,7 @@ export class CancelAppointmentUseCase {
     @Inject(CLOCK_PORT)
     private readonly clock: ClockPort,
     private readonly audit: AuditRecorder,
+    private readonly agendaEvents: AgendaEventPublisher,
   ) {}
 
   // restrictToClientId narrows the operation to a single client's appointments:
@@ -72,6 +74,8 @@ export class CancelAppointmentUseCase {
       before: { status: current.status, startsAt: current.startsAt },
       after: { status: appointment.status, reason: dto.reason ?? null },
     });
+
+    await this.agendaEvents.changed();
 
     return {
       appointment,

@@ -16,16 +16,12 @@ export class TenantResponseDto {
   @ApiProperty()
   timezone: string;
 
-  @ApiProperty({ nullable: true })
-  plan: string | null;
-
   static from(tenant: Tenant): TenantResponseDto {
     return {
       id: tenant.id,
       name: tenant.name,
       status: tenant.status,
       timezone: tenant.timezone,
-      plan: tenant.plan,
     };
   }
 }

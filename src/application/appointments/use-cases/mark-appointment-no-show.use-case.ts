@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { Appointment } from '@domain/appointments/entities/appointment.entity';
 import { AppointmentNotFoundError } from '@domain/appointments/exceptions/appointment.exceptions';
@@ -15,6 +16,7 @@ export class MarkAppointmentNoShowUseCase {
     @Inject(APPOINTMENT_REPOSITORY)
     private readonly appointmentRepository: AppointmentRepository,
     private readonly audit: AuditRecorder,
+    private readonly agendaEvents: AgendaEventPublisher,
   ) {}
 
   async execute(id: string): Promise<Appointment> {
@@ -32,6 +34,8 @@ export class MarkAppointmentNoShowUseCase {
       before: { status: current.status },
       after: { status: appointment.status },
     });
+
+    await this.agendaEvents.changed();
 
     return appointment;
   }

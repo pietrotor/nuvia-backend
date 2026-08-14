@@ -26,8 +26,17 @@ export class ServiceResponseDto {
   @ApiProperty({ nullable: true })
   depositPercent: number | null;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Null charges the deposit with the default QR of the business',
+  })
+  depositQrId: string | null;
+
   @ApiProperty({ type: [String] })
   professionalIds: string[];
+
+  @ApiProperty()
+  clientChoosesProfessional: boolean;
 
   @ApiProperty()
   isActive: boolean;
@@ -43,7 +52,9 @@ export class ServiceResponseDto {
         ? MoneyResponseDto.from(service.depositAmount)
         : null,
       depositPercent: service.depositPercent,
+      depositQrId: service.depositQrId,
       professionalIds: service.professionalIds,
+      clientChoosesProfessional: service.clientChoosesProfessional,
       isActive: service.isActive,
     };
   }

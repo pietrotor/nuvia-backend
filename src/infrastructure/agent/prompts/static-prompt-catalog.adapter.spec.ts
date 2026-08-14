@@ -56,16 +56,38 @@ describe('StaticPromptCatalogAdapter', () => {
         },
         nowLabel: 'martes, 4 de agosto de 2026, 15:00',
         timezone: 'America/La_Paz',
+        calendar: 'martes 4 de agosto, miércoles 5 de agosto',
+        businessCatalog: 'Servicios:\n- Hidrafacial — id svc-1 — 75 min',
+        clientState: 'no tiene ninguna reserva registrada',
+        clientName: 'Ana',
       });
 
       expect(staticText).toContain('Nunca finjas ser una persona humana');
       expect(staticText).toContain('No des consejos médicos');
       expect(staticText).toContain('find_availability');
       expect(staticText).toContain('request_handoff');
+      expect(staticText).toContain('book_appointment');
       expect(staticText).toContain('no podés escuchar audios');
       expect(staticText).not.toContain('{{');
     },
   );
+
+  // The channel layer is the only place that says how a message is written, and a reply
+  // that reads well on a phone is as much part of the product as a correct booking.
+  it('states how a WhatsApp message is formatted, not only what it says', async () => {
+    const { fragments } = await adapter.findFor(
+      criteriaFor(BusinessCategory.ESTHETICS),
+    );
+    const channel = fragments
+      .filter((fragment) => fragment.layer === PromptLayer.CHANNEL)
+      .flatMap((fragment) => fragment.lines)
+      .join('\n');
+
+    expect(channel).toContain('*así*');
+    expect(channel).toContain('negrita');
+    expect(channel).toContain('guion y un espacio');
+    expect(channel).toContain('dos y cinco líneas');
+  });
 
   it('never mentions a country or a currency: those come from config', async () => {
     for (const category of categories) {

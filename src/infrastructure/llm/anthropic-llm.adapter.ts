@@ -66,6 +66,9 @@ export class AnthropicLlmAdapter implements LlmPort {
             description: tool.description,
             input_schema: tool.parameters,
           })),
+          tool_choice: input.tools?.length
+            ? { type: input.toolChoice ?? 'auto' }
+            : undefined,
           temperature: 0.2,
         }),
         signal: AbortSignal.timeout(25_000),

@@ -11,6 +11,8 @@ export interface ServiceProps {
   requiresDeposit: boolean;
   depositAmount: string | null;
   depositPercent: number | null;
+  depositQrId: string | null;
+  clientChoosesProfessional: boolean;
   isActive: boolean;
   professionalIds: string[];
   createdAt?: Date;
@@ -26,6 +28,9 @@ export class Service {
   public readonly requiresDeposit: boolean;
   public readonly depositAmount: Money | null;
   public readonly depositPercent: number | null;
+  // Null means the deposit is charged with the QR the business marked as default.
+  public readonly depositQrId: string | null;
+  public readonly clientChoosesProfessional: boolean;
   public readonly isActive: boolean;
   public readonly professionalIds: string[];
   public readonly createdAt?: Date;
@@ -44,6 +49,8 @@ export class Service {
       ? Money.of(props.depositAmount, props.currency)
       : null;
     this.depositPercent = props.depositPercent;
+    this.depositQrId = props.depositQrId;
+    this.clientChoosesProfessional = props.clientChoosesProfessional;
     this.isActive = props.isActive;
     this.professionalIds = props.professionalIds;
     this.createdAt = props.createdAt;

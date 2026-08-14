@@ -42,6 +42,8 @@ export class DrizzleServiceRepository
             requiresDeposit: data.requiresDeposit ?? false,
             depositAmount: data.depositAmount,
             depositPercent: data.depositPercent,
+            depositQrId: data.depositQrId,
+            clientChoosesProfessional: data.clientChoosesProfessional ?? true,
             isActive: data.isActive ?? true,
           })
           .returning();
@@ -83,11 +85,18 @@ export class DrizzleServiceRepository
       const tenantId = this.tenantId;
       return await this.drizzle.db.transaction(async (tx) => {
         const { professionalIds, ...serviceData } = data;
-        const [updated] = await tx
-          .update(services)
-          .set(serviceData)
-          .where(and(eq(services.tenantId, tenantId), eq(services.id, id)))
-          .returning();
+        const scope = and(eq(services.tenantId, tenantId), eq(services.id, id));
+
+        /* A patch that only moves who offers the service leaves the row untouched, and
+         * asking the driver to set no column at all is an error, not a no-op. */
+        const [updated] =
+          Object.keys(serviceData).length > 0
+            ? await tx
+                .update(services)
+                .set(serviceData)
+                .where(scope)
+                .returning()
+            : await tx.select().from(services).where(scope);
 
         if (!updated) return null;
 

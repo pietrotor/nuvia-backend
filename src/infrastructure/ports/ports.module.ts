@@ -11,6 +11,8 @@ import { OpenAiCompatibleLlmAdapter } from '../llm/openai-compatible-llm.adapter
 import { AnthropicLlmAdapter } from '../llm/anthropic-llm.adapter';
 import { ConfiguredLlmAdapter } from '../llm/configured-llm.adapter';
 import { LocalObjectStorageAdapter } from '../storage/local-object-storage.adapter';
+import { S3ObjectStorageAdapter } from '../storage/s3-object-storage.adapter';
+import { ConfiguredObjectStorageAdapter } from '../storage/configured-object-storage.adapter';
 import { EvolutionMessagingAdapter } from '../messaging/evolution-messaging.adapter';
 import { EvolutionSessionAdapter } from '../messaging/evolution-session.adapter';
 import { RuntimeEnvironmentAdapter } from '../config/runtime-environment.adapter';
@@ -24,10 +26,16 @@ import { EvolutionApiClient } from '../messaging/evolution-api.client';
     AnthropicLlmAdapter,
     OpenAiCompatibleLlmAdapter,
     ConfiguredLlmAdapter,
+    LocalObjectStorageAdapter,
+    S3ObjectStorageAdapter,
+    ConfiguredObjectStorageAdapter,
     { provide: MESSAGING_PORT, useClass: EvolutionMessagingAdapter },
     { provide: WHATSAPP_SESSION_PORT, useClass: EvolutionSessionAdapter },
     { provide: LLM_PORT, useExisting: ConfiguredLlmAdapter },
-    { provide: OBJECT_STORAGE_PORT, useClass: LocalObjectStorageAdapter },
+    {
+      provide: OBJECT_STORAGE_PORT,
+      useExisting: ConfiguredObjectStorageAdapter,
+    },
     {
       provide: RUNTIME_ENVIRONMENT_PORT,
       useClass: RuntimeEnvironmentAdapter,

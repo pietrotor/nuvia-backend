@@ -14,13 +14,24 @@ export interface AppointmentView {
 }
 
 export interface AppointmentViewRepository {
+  findById(id: string): Promise<AppointmentView | null>;
   findInRange(input: {
     from: Date;
     toExclusive: Date;
     professionalId?: string;
+    professionalIds?: string[];
+    serviceIds?: string[];
+    statuses?: AppointmentStatus[];
+    branchId?: string;
+    branchIds?: string[];
   }): Promise<AppointmentView[]>;
   findByClient(input: {
     clientId: string;
+    statuses?: AppointmentStatus[];
+    from?: Date;
+  }): Promise<AppointmentView[]>;
+  findByProfessional(input: {
+    professionalId: string;
     statuses?: AppointmentStatus[];
     from?: Date;
   }): Promise<AppointmentView[]>;

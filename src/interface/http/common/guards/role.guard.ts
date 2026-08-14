@@ -3,25 +3,28 @@ import { Reflector } from '@nestjs/core';
 import { Request } from 'express';
 
 import { User } from '@domain/users/entities/user.entity';
-import { Role } from '@domain/users/value-objects/role.vo';
+import {
+  Permission,
+  roleHasPermission,
+} from '@domain/users/value-objects/permission.vo';
 import {
   ErrorCode,
   ForbiddenError,
   UnauthorizedError,
 } from '@domain/common/exceptions';
-import { META_ROLES } from '../decorators/role-protected.decorator';
+import { META_PERMISSIONS } from '../decorators/role-protected.decorator';
 
 @Injectable()
 export class RoleGuard implements CanActivate {
   constructor(private readonly reflector: Reflector) {}
 
   canActivate(context: ExecutionContext): boolean {
-    const allowedRoles = this.reflector.get<Role[] | undefined>(
-      META_ROLES,
+    const requiredPermissions = this.reflector.get<Permission[] | undefined>(
+      META_PERMISSIONS,
       context.getHandler(),
     );
 
-    if (!allowedRoles?.length) {
+    if (!requiredPermissions?.length) {
       return true;
     }
 
@@ -32,9 +35,13 @@ export class RoleGuard implements CanActivate {
       throw new UnauthorizedError(ErrorCode.INVALID_CREDENTIALS);
     }
 
-    // Superadmin does not inherit tenant roles: an endpoint that should be
-    // reachable by support has to list SUPERADMIN explicitly.
-    if (!allowedRoles.includes(user.role)) {
+    // OR semantics: any listed permission is enough. Superadmin does not inherit
+    // tenant permissions — those endpoints must list TENANTS_ADMIN explicitly.
+    const allowed = requiredPermissions.some((permission) =>
+      roleHasPermission(user.role, permission),
+    );
+
+    if (!allowed) {
       throw new ForbiddenError(ErrorCode.INSUFFICIENT_ROLE);
     }
 

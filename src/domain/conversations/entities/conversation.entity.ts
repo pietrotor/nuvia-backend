@@ -7,6 +7,7 @@ export enum ConversationAttentionState {
 export interface ConversationProps {
   id: string;
   tenantId: string;
+  branchId?: string | null;
   clientId: string | null;
   clientPhoneE164: string;
   botPaused: boolean;
@@ -18,6 +19,7 @@ export interface ConversationProps {
 export class Conversation {
   public readonly id: string;
   public readonly tenantId: string;
+  public readonly branchId: string | null;
   public readonly clientId: string | null;
   public readonly clientPhoneE164: string;
   public readonly botPaused: boolean;
@@ -28,6 +30,7 @@ export class Conversation {
   constructor(props: ConversationProps) {
     this.id = props.id;
     this.tenantId = props.tenantId;
+    this.branchId = props.branchId ?? null;
     this.clientId = props.clientId;
     this.clientPhoneE164 = props.clientPhoneE164;
     this.botPaused = props.botPaused;

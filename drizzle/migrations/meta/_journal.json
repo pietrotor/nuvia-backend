@@ -64,6 +64,62 @@
       "when": 1785900000000,
       "tag": "0008_business_category_and_agent_voice",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1786000000000,
+      "tag": "0009_deposit_qr_catalog",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1786100000000,
+      "tag": "0010_service_professional_choice",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1786325763505,
+      "tag": "0011_add_branches",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1786327531308,
+      "tag": "0012_harden_branches",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1786480454044,
+      "tag": "0013_cool_rachel_grey",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1786545399775,
+      "tag": "0014_confused_micromax",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1786545600000,
+      "tag": "0015_backfill_trial_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1786569980294,
+      "tag": "0016_thick_stephen_strange",
+      "breakpoints": true
     }
   ]
 }

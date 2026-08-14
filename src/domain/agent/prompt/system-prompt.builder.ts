@@ -16,6 +16,12 @@ export interface SystemPromptInput {
   voice: TenantVoice;
   nowLabel: string;
   timezone: string;
+  calendar: string;
+  businessCatalog: string;
+  clientState: string;
+  // Empty when WhatsApp gave no usable profile name, which drops the fragment that greets
+  // her by name instead of rendering a placeholder.
+  clientName: string;
 }
 
 export interface ComposedSystemPrompt {
@@ -33,7 +39,9 @@ export function buildSystemPrompt(
   const values: Record<string, string> = {
     agentName: input.voice.agentName,
     client: input.lexicon.client,
+    clientName: input.clientName,
     professional: input.lexicon.professional,
+    professionalPlural: input.lexicon.professionalPlural,
     service: input.lexicon.service,
     servicePlural: input.lexicon.servicePlural,
     session: input.lexicon.session,
@@ -41,6 +49,9 @@ export function buildSystemPrompt(
     businessNotes: input.voice.businessNotes ?? '',
     currentDateTime: input.nowLabel,
     timezone: input.timezone,
+    calendar: input.calendar,
+    businessCatalog: input.businessCatalog,
+    clientState: input.clientState,
   };
 
   const linesOf = (layer: PromptLayer): string[] =>

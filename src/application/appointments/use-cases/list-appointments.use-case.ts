@@ -2,12 +2,14 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { ListAppointmentsDto } from '@application/appointments/dto/list-appointments.dto';
 import { ScheduleContextResolver } from '@application/appointments/services/schedule-context-resolver.service';
+import { AccessibleBranchesResolver } from '@application/branches/services/accessible-branches.resolver';
 import {
   APPOINTMENT_VIEW_REPOSITORY,
   AppointmentView,
   AppointmentViewRepository,
 } from '@domain/appointments/repositories/appointment-view.repository';
 import { appointmentDateRangeIn } from '@domain/appointments/services/date-range';
+import { BranchNotFoundError } from '@domain/branches/exceptions/branch.exceptions';
 import { ErrorCode, ValidationError } from '@domain/common/exceptions';
 import { CLOCK_PORT, ClockPort } from '@domain/common/ports/clock.port';
 
@@ -17,6 +19,7 @@ export class ListAppointmentsUseCase {
     @Inject(APPOINTMENT_VIEW_REPOSITORY)
     private readonly appointmentViewRepository: AppointmentViewRepository,
     private readonly scheduleContext: ScheduleContextResolver,
+    private readonly accessibleBranches: AccessibleBranchesResolver,
     @Inject(CLOCK_PORT)
     private readonly clock: ClockPort,
   ) {}
@@ -31,9 +34,34 @@ export class ListAppointmentsUseCase {
     });
     if (!range) throw new ValidationError(ErrorCode.INVALID_TIME_RANGE);
 
+    const allowedBranchIds = await this.accessibleBranches.forCurrentUser();
+    let branchId = dto.branchId;
+    let branchIds: string[] | undefined;
+
+    if (allowedBranchIds) {
+      if (dto.branchId) {
+        if (!allowedBranchIds.includes(dto.branchId)) {
+          throw new BranchNotFoundError(dto.branchId);
+        }
+      } else {
+        branchId = undefined;
+        branchIds = allowedBranchIds;
+      }
+    }
+
+    const professionalIds = dto.professionalIds?.length
+      ? dto.professionalIds
+      : dto.professionalId
+        ? [dto.professionalId]
+        : undefined;
+
     return this.appointmentViewRepository.findInRange({
       ...range,
-      professionalId: dto.professionalId,
+      professionalIds,
+      serviceIds: dto.serviceIds?.length ? dto.serviceIds : undefined,
+      statuses: dto.statuses?.length ? dto.statuses : undefined,
+      branchId,
+      branchIds,
     });
   }
 }

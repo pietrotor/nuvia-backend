@@ -47,6 +47,12 @@ const VOLATILE: PromptFragment = {
   lines: ['Fecha y hora: {{currentDateTime}} ({{timezone}}).'],
 };
 
+const CLIENT_NAME: PromptFragment = {
+  key: 'volatile.client_name',
+  layer: PromptLayer.VOLATILE,
+  lines: ['Se llama {{clientName}}.'],
+};
+
 const voice: TenantVoice = {
   agentName: 'Vale',
   tone: AgentTone.WARM,
@@ -57,12 +63,16 @@ const voice: TenantVoice = {
 function build(overrides: Partial<SystemPromptInput> = {}) {
   return buildSystemPrompt({
     revision: 'rev1',
-    fragments: [PLATFORM, CATEGORY, TENANT_NOTES, GUARD, VOLATILE],
+    fragments: [PLATFORM, CATEGORY, TENANT_NOTES, GUARD, VOLATILE, CLIENT_NAME],
     category: BusinessCategory.ESTHETICS,
     lexicon: categoryLexicon(BusinessCategory.ESTHETICS),
     voice,
     nowLabel: 'martes, 4 de agosto de 2026, 15:00',
     timezone: 'America/La_Paz',
+    calendar: 'martes 4 de agosto, miércoles 5 de agosto',
+    businessCatalog: 'Servicios:\n- Hidrafacial — id svc-1 — 75 min',
+    clientState: 'no tiene ninguna reserva registrada',
+    clientName: 'Ana',
     ...overrides,
   });
 }
@@ -98,6 +108,11 @@ describe('buildSystemPrompt', () => {
 
   it('drops the notes fragment when the owner left them empty', () => {
     expect(build().staticText).not.toContain('Datos del negocio');
+  });
+
+  it('greets by name only when WhatsApp gave one', () => {
+    expect(build().volatileText).toContain('Se llama Ana.');
+    expect(build({ clientName: '' }).volatileText).not.toContain('Se llama');
   });
 
   it('keeps the platform rules above hostile owner notes', () => {

@@ -3,12 +3,11 @@ import {
   uuid,
   varchar,
   boolean,
-  jsonb,
   timestamp,
+  text,
   index,
 } from 'drizzle-orm/pg-core';
 
-import { WeeklyHours } from '@domain/business-config/entities/business-config.entity';
 import { tenants } from './tenant.schema';
 
 export const professionals = pgTable(
@@ -19,7 +18,10 @@ export const professionals = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
-    weeklyHours: jsonb('weekly_hours').$type<WeeklyHours>().notNull(),
+    // ObjectStoragePort key. The panel downloads via GET /professionals/:id/avatar,
+    // so a provider URL never lands in the database.
+    avatarStorageKey: text('avatar_storage_key'),
+    avatarMimeType: varchar('avatar_mime_type', { length: 100 }),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

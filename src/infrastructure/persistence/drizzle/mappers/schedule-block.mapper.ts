@@ -6,6 +6,7 @@ export class ScheduleBlockMapper {
     return new ScheduleBlock({
       id: row.id,
       tenantId: row.tenantId,
+      branchId: row.branchId,
       professionalId: row.professionalId,
       startsAt: row.startsAt,
       endsAt: row.endsAt,

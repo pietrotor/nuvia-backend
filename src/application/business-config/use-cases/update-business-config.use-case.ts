@@ -13,7 +13,6 @@ import {
   BusinessConfigRepository,
   UpdateBusinessConfigData,
 } from '@domain/business-config/repositories/business-config.repository';
-import { assertValidWeeklyHours } from '@domain/business-config/services/e1-config-validator';
 import {
   AgentPolicyDto,
   UpdateBusinessConfigDto,
@@ -31,15 +30,10 @@ export class UpdateBusinessConfigUseCase {
     const current = await this.businessConfigRepository.findByTenant();
     if (!current) throw new BusinessConfigNotFoundError();
 
-    if (dto.businessHours) {
-      assertValidWeeklyHours(dto.businessHours);
-    }
-
     const data: UpdateBusinessConfigData = {
       ...dto,
       slug: dto.slug?.trim(),
       agentName: dto.agentName?.trim(),
-      address: dto.address?.trim() ?? dto.address,
       agentPolicy: dto.agentPolicy
         ? this.mergeAgentPolicy(current.agentPolicy, dto.agentPolicy)
         : undefined,

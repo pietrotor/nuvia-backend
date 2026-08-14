@@ -2,8 +2,81 @@ import { ConfigService } from '@nestjs/config';
 
 import { AnthropicLlmAdapter } from './anthropic-llm.adapter';
 
+function buildConfig(): ConfigService {
+  return {
+    get: jest.fn((key: string, fallback?: string) => {
+      const values: Record<string, string> = {
+        LLM_BASE_URL: 'https://api.anthropic.com',
+        LLM_API_KEY: 'test-key',
+        LLM_MODEL: 'claude-sonnet-5',
+      };
+      return values[key] ?? fallback;
+    }),
+  } as unknown as ConfigService;
+}
+
+function stubResponse(): jest.SpyInstance {
+  return jest.spyOn(global, 'fetch').mockResolvedValue(
+    new Response(
+      JSON.stringify({ content: [{ type: 'text', text: 'Hola.' }] }),
+      {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      },
+    ),
+  );
+}
+
+function sentToolChoice(fetchMock: jest.SpyInstance): unknown {
+  const body = JSON.parse(
+    String((fetchMock.mock.calls[0][1] as RequestInit)?.body),
+  ) as { tool_choice?: unknown };
+  return body.tool_choice;
+}
+
+const tools = [
+  {
+    name: 'book_appointment',
+    description: 'Agenda un turno.',
+    parameters: { type: 'object', properties: {} },
+  },
+];
+
 describe('AnthropicLlmAdapter', () => {
   afterEach(() => jest.restoreAllMocks());
+
+  it('lets the model decide by default', async () => {
+    const fetchMock = stubResponse();
+
+    await new AnthropicLlmAdapter(buildConfig()).chat({
+      messages: [{ role: 'user', content: 'Hola.' }],
+      tools,
+    });
+
+    expect(sentToolChoice(fetchMock)).toEqual({ type: 'auto' });
+  });
+
+  it('forces a tool call when the caller asks for one', async () => {
+    const fetchMock = stubResponse();
+
+    await new AnthropicLlmAdapter(buildConfig()).chat({
+      messages: [{ role: 'user', content: 'Hola.' }],
+      tools,
+      toolChoice: 'any',
+    });
+
+    expect(sentToolChoice(fetchMock)).toEqual({ type: 'any' });
+  });
+
+  it('omits the tool choice when there are no tools to call', async () => {
+    const fetchMock = stubResponse();
+
+    await new AnthropicLlmAdapter(buildConfig()).chat({
+      messages: [{ role: 'user', content: 'Hola.' }],
+    });
+
+    expect(sentToolChoice(fetchMock)).toBeUndefined();
+  });
 
   it('maps the neutral LLM contract to Anthropic tool use', async () => {
     const fetchMock = jest.spyOn(global, 'fetch').mockResolvedValue(
@@ -22,17 +95,7 @@ describe('AnthropicLlmAdapter', () => {
         { status: 200, headers: { 'content-type': 'application/json' } },
       ),
     );
-    const config = {
-      get: jest.fn((key: string, fallback?: string) => {
-        const values: Record<string, string> = {
-          LLM_BASE_URL: 'https://api.anthropic.com',
-          LLM_API_KEY: 'test-key',
-          LLM_MODEL: 'claude-sonnet-5',
-        };
-        return values[key] ?? fallback;
-      }),
-    } as unknown as ConfigService;
-    const adapter = new AnthropicLlmAdapter(config);
+    const adapter = new AnthropicLlmAdapter(buildConfig());
 
     const result = await adapter.chat({
       messages: [

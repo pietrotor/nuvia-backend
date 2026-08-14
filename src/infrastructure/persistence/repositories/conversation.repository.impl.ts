@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, isNull } from 'drizzle-orm';
 
 import { ConversationRepository } from '@domain/conversations/repositories/conversation.repository';
 import { Conversation } from '@domain/conversations/entities/conversation.entity';
@@ -102,5 +102,27 @@ export class DrizzleConversationRepository
       eq(conversations.id, id),
     );
     return row ? ConversationMapper.toDomain(row) : null;
+  }
+
+  async setBranch(id: string, branchId: string): Promise<Conversation | null> {
+    const [row] = await this.updateIn(
+      conversations,
+      { branchId },
+      eq(conversations.id, id),
+    );
+    return row ? ConversationMapper.toDomain(row) : null;
+  }
+
+  async assignBranchToAllWithoutBranch(branchId: string): Promise<number> {
+    const updated = await this.updateIn(
+      conversations,
+      { branchId },
+      isNull(conversations.branchId),
+    );
+    return updated.length;
+  }
+
+  async deleteAllUnscoped(): Promise<void> {
+    await this.drizzle.db.delete(conversations);
   }
 }

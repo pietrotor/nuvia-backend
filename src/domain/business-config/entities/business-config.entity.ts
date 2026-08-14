@@ -59,14 +59,11 @@ export interface BusinessConfigProps {
   tone: AgentTone;
   businessCategory?: BusinessCategory;
   currency: Currency;
-  address?: string | null;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
-  businessHours: WeeklyHours;
   bookingPolicy: BookingPolicy;
   agentPolicy?: Partial<AgentPolicy>;
   faq: Record<string, string>;
-  staticDepositQrUrl?: string | null;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
   evolutionWebhookTokenHash?: string | null;
@@ -86,14 +83,11 @@ export class BusinessConfig {
   // Currency the business charges in: every price and deposit is expressed in it
   // unless a service overrides it.
   public readonly currency: Currency;
-  public readonly address: string | null;
   public readonly logoUrl: string | null;
   public readonly whatsappPhone: string | null;
-  public readonly businessHours: WeeklyHours;
   public readonly bookingPolicy: BookingPolicy;
   public readonly agentPolicy: AgentPolicy;
   public readonly faq: Record<string, string>;
-  public readonly staticDepositQrUrl: string | null;
   public readonly evolutionInstanceId: string | null;
   public readonly evolutionInstanceName: string | null;
   public readonly evolutionWebhookTokenHash: string | null;
@@ -108,15 +102,12 @@ export class BusinessConfig {
     this.tone = props.tone;
     this.businessCategory = props.businessCategory ?? DEFAULT_BUSINESS_CATEGORY;
     this.currency = props.currency;
-    this.address = props.address ?? null;
     this.logoUrl = props.logoUrl ?? null;
     this.whatsappPhone = props.whatsappPhone ?? null;
-    this.businessHours = props.businessHours;
     this.bookingPolicy = props.bookingPolicy;
     // Rows written before a policy field existed only carry part of the object.
     this.agentPolicy = { ...DEFAULT_AGENT_POLICY, ...props.agentPolicy };
     this.faq = props.faq;
-    this.staticDepositQrUrl = props.staticDepositQrUrl ?? null;
     this.evolutionInstanceId = props.evolutionInstanceId ?? null;
     this.evolutionInstanceName = props.evolutionInstanceName ?? null;
     this.evolutionWebhookTokenHash = props.evolutionWebhookTokenHash ?? null;

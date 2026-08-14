@@ -44,11 +44,6 @@ export class CreateTenantDto {
   @IsString()
   timezone?: string;
 
-  @ApiProperty({ example: 'trial', required: false })
-  @IsOptional()
-  @IsString()
-  plan?: string;
-
   @ApiProperty({ example: 'estetica-glow', required: false })
   @IsOptional()
   @IsString()

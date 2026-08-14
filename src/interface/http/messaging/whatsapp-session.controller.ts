@@ -17,7 +17,7 @@ import { CreateWhatsAppSessionUseCase } from '@application/messaging/use-cases/c
 import { DisconnectWhatsAppSessionUseCase } from '@application/messaging/use-cases/disconnect-whatsapp-session.use-case';
 import { GetWhatsAppQrUseCase } from '@application/messaging/use-cases/get-whatsapp-qr.use-case';
 import { GetWhatsAppStatusUseCase } from '@application/messaging/use-cases/get-whatsapp-status.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 import {
   WhatsAppQrResponseDto,
@@ -36,7 +36,7 @@ export class WhatsAppSessionController {
   ) {}
 
   @Post()
-  @Auth(Role.OWNER)
+  @Auth(Permission.WHATSAPP_MANAGE)
   @ApiOperation({ summary: 'Creates a session and returns the pairing QR' })
   @ApiResponse({ status: 201, type: WhatsAppQrResponseDto })
   async create(): Promise<WhatsAppQrResponseDto> {
@@ -44,7 +44,7 @@ export class WhatsAppSessionController {
   }
 
   @Get('qr')
-  @Auth(Role.OWNER)
+  @Auth(Permission.WHATSAPP_MANAGE)
   @ApiOperation({ summary: 'Refreshes the pairing QR' })
   @ApiResponse({ status: 200, type: WhatsAppQrResponseDto })
   async qr(): Promise<WhatsAppQrResponseDto> {
@@ -52,7 +52,7 @@ export class WhatsAppSessionController {
   }
 
   @Get('status')
-  @Auth(Role.OWNER)
+  @Auth(Permission.WHATSAPP_MANAGE)
   @ApiOperation({ summary: 'Checks the WhatsApp status' })
   @ApiResponse({ status: 200, type: WhatsAppStatusResponseDto })
   async status(): Promise<WhatsAppStatusResponseDto> {
@@ -60,7 +60,7 @@ export class WhatsAppSessionController {
   }
 
   @Delete()
-  @Auth(Role.OWNER)
+  @Auth(Permission.WHATSAPP_MANAGE)
   @HttpCode(HttpStatus.NO_CONTENT)
   @ApiOperation({ summary: 'Unlinks WhatsApp from the business' })
   async disconnect(): Promise<void> {

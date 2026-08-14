@@ -18,7 +18,11 @@ export class CreateProfessionalDto {
   @MaxLength(255)
   name: string;
 
-  @ApiProperty({ type: WeeklyHoursDto })
+  @ApiProperty({
+    type: WeeklyHoursDto,
+    description:
+      'Assigned to the primary branch (branch_professionals). Hours no longer live on the professional row.',
+  })
   @ValidateNested()
   @Type(() => WeeklyHoursDto)
   weeklyHours: WeeklyHoursDto;

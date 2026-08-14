@@ -16,7 +16,7 @@ import { CreateUserUseCase } from '@application/users/use-cases/create-user.use-
 import { ListUsersUseCase } from '@application/users/use-cases/list-users.use-case';
 import { UpdateUserRoleUseCase } from '@application/users/use-cases/update-user-role.use-case';
 import { DeactivateUserUseCase } from '@application/users/use-cases/deactivate-user.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '../common/decorators';
 import { UserResponseDto } from './dto/user-response.dto';
 
@@ -33,14 +33,14 @@ export class UsersController {
   ) {}
 
   @Post()
-  @Auth(Role.OWNER)
+  @Auth(Permission.USERS_WRITE)
   @ApiOperation({ summary: 'Creates a user in the business of the token' })
   async create(@Body() dto: CreateUserDto): Promise<UserResponseDto> {
     return UserResponseDto.from(await this.createUser.execute(dto));
   }
 
   @Get()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.USERS_READ)
   @ApiOperation({ summary: 'Lists the users of the business of the token' })
   async findAll(): Promise<UserResponseDto[]> {
     const users = await this.listUsers.execute();
@@ -49,7 +49,7 @@ export class UsersController {
   }
 
   @Patch(':id/role')
-  @Auth(Role.OWNER)
+  @Auth(Permission.USERS_WRITE)
   @ApiOperation({ summary: 'Changes the role of a user of the business' })
   async changeRole(
     @Param('id', ParseUUIDPipe) id: string,
@@ -59,7 +59,7 @@ export class UsersController {
   }
 
   @Delete(':id')
-  @Auth(Role.OWNER)
+  @Auth(Permission.USERS_WRITE)
   @ApiOperation({ summary: 'Deactivates a user (the record is not deleted)' })
   async deactivate(
     @Param('id', ParseUUIDPipe) id: string,

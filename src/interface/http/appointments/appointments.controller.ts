@@ -17,10 +17,12 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
-import { Role } from '@domain/users/value-objects/role.vo';
+import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 import { BookAppointmentUseCase } from '@application/appointments/use-cases/book-appointment.use-case';
 import { CancelAppointmentUseCase } from '@application/appointments/use-cases/cancel-appointment.use-case';
+import { GetAppointmentUseCase } from '@application/appointments/use-cases/get-appointment.use-case';
 import { GetAvailabilityUseCase } from '@application/appointments/use-cases/get-availability.use-case';
 import { ListAppointmentsUseCase } from '@application/appointments/use-cases/list-appointments.use-case';
 import { MarkAppointmentAttendedUseCase } from '@application/appointments/use-cases/mark-appointment-attended.use-case';
@@ -43,6 +45,7 @@ export class AppointmentsController {
   constructor(
     private readonly bookAppointment: BookAppointmentUseCase,
     private readonly getAvailability: GetAvailabilityUseCase,
+    private readonly getAppointment: GetAppointmentUseCase,
     private readonly listAppointments: ListAppointmentsUseCase,
     private readonly rescheduleAppointment: RescheduleAppointmentUseCase,
     private readonly cancelAppointment: CancelAppointmentUseCase,
@@ -51,18 +54,18 @@ export class AppointmentsController {
   ) {}
 
   @Get('availability')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_READ)
   @ApiOperation({ summary: 'Lists available slots' })
   @ApiResponse({ status: 200, type: [AvailabilitySlotResponseDto] })
   async availability(
     @Query() query: GetAvailabilityDto,
   ): Promise<AvailabilitySlotResponseDto[]> {
-    const slots = await this.getAvailability.execute(query);
+    const slots = await this.getAvailability.execute(query, BookingActor.STAFF);
     return slots.map(AvailabilitySlotResponseDto.from);
   }
 
   @Get()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_READ)
   @ApiOperation({
     summary:
       'Lists appointments by date range, with client, professional and service',
@@ -77,18 +80,36 @@ export class AppointmentsController {
     return appointments.map(AppointmentViewResponseDto.from);
   }
 
+  // Declared after the literal routes so 'availability' is never read as an id.
+  @Get(':id')
+  @Auth(Permission.APPOINTMENTS_READ)
+  @ApiOperation({
+    summary: 'Gets one appointment with its client, professional and service',
+  })
+  @ApiResponse({ status: 200, type: AppointmentViewResponseDto })
+  async findOne(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AppointmentViewResponseDto> {
+    return AppointmentViewResponseDto.from(
+      await this.getAppointment.execute(id),
+    );
+  }
+
   @Post()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Books an appointment' })
   @ApiResponse({ status: 201, type: AppointmentResponseDto })
   async book(@Body() dto: BookAppointmentDto): Promise<AppointmentResponseDto> {
-    const appointment = await this.bookAppointment.execute(dto);
+    const appointment = await this.bookAppointment.execute(
+      dto,
+      BookingActor.STAFF,
+    );
     return AppointmentResponseDto.from(appointment);
   }
 
   @Patch(':id/reschedule')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_WRITE)
   @ApiOperation({
     summary: 'Reschedules an appointment to a new available slot',
   })
@@ -98,12 +119,14 @@ export class AppointmentsController {
     @Body() dto: RescheduleAppointmentDto,
   ): Promise<AppointmentChangeResponseDto> {
     return AppointmentChangeResponseDto.from(
-      await this.rescheduleAppointment.execute(id, dto),
+      await this.rescheduleAppointment.execute(id, dto, {
+        actor: BookingActor.STAFF,
+      }),
     );
   }
 
   @Post(':id/cancel')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Cancels an appointment without deleting it' })
   @ApiResponse({ status: 200, type: AppointmentChangeResponseDto })
@@ -117,7 +140,7 @@ export class AppointmentsController {
   }
 
   @Post(':id/attend')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Marks the appointment as attended' })
   @ApiResponse({ status: 200, type: AppointmentResponseDto })
@@ -128,7 +151,7 @@ export class AppointmentsController {
   }
 
   @Post(':id/no-show')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.APPOINTMENTS_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Marks the appointment as a no-show' })
   @ApiResponse({ status: 200, type: AppointmentResponseDto })

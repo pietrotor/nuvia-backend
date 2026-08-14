@@ -23,8 +23,9 @@ import { ListConversationsUseCase } from '@application/conversations/use-cases/l
 import { PauseConversationBotUseCase } from '@application/conversations/use-cases/pause-conversation-bot.use-case';
 import { ResumeConversationBotUseCase } from '@application/conversations/use-cases/resume-conversation-bot.use-case';
 import { SendManualMessageUseCase } from '@application/conversations/use-cases/send-manual-message.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
+import { PaginatedResponseDto } from '@interface/http/common/dto/paginated-response.dto';
 import { ConversationResponseDto } from './dto/conversation-response.dto';
 import { MessageResponseDto } from './dto/message-response.dto';
 
@@ -41,22 +42,27 @@ export class ConversationsController {
   ) {}
 
   @Get()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.CONVERSATIONS_READ)
   @ApiOperation({
     summary: 'Lists the WhatsApp conversation inbox, with the client',
   })
-  @ApiResponse({ status: 200, type: [ConversationResponseDto] })
+  @ApiResponse({ status: 200, type: PaginatedResponseDto })
   async list(
     @Query() pagination: PaginationDto,
-  ): Promise<ConversationResponseDto[]> {
-    const views = await this.listConversations.execute(pagination);
-    return views.map((view) =>
-      ConversationResponseDto.from(view.conversation, view.client),
+  ): Promise<PaginatedResponseDto<ConversationResponseDto>> {
+    const result = await this.listConversations.execute(pagination);
+    return PaginatedResponseDto.of(
+      result.rows.map((view) =>
+        ConversationResponseDto.from(view.conversation, view.client),
+      ),
+      result.total,
+      result.limit,
+      result.offset,
     );
   }
 
   @Get(':id/messages')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.CONVERSATIONS_READ)
   @ApiOperation({ summary: 'Reads the messages of a conversation' })
   @ApiResponse({ status: 200, type: [MessageResponseDto] })
   async messages(
@@ -68,7 +74,7 @@ export class ConversationsController {
   }
 
   @Post(':id/pause')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.CONVERSATIONS_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Pauses the agent in this conversation' })
   @ApiResponse({ status: 200, type: ConversationResponseDto })
@@ -79,7 +85,7 @@ export class ConversationsController {
   }
 
   @Post(':id/resume')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.CONVERSATIONS_WRITE)
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Resumes the agent and closes the handoff' })
   @ApiResponse({ status: 200, type: ConversationResponseDto })
@@ -90,7 +96,7 @@ export class ConversationsController {
   }
 
   @Post(':id/messages')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.CONVERSATIONS_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({
     summary: 'Replies manually, as a person from the business',

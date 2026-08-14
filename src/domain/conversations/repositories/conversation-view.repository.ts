@@ -8,8 +8,16 @@ export interface ConversationView {
   client: ClientSummary | null;
 }
 
+export interface ConversationListResult {
+  rows: ConversationView[];
+  total: number;
+}
+
 export interface ConversationViewRepository {
-  list(input: { limit: number; offset: number }): Promise<ConversationView[]>;
+  list(input: {
+    limit: number;
+    offset: number;
+  }): Promise<ConversationListResult>;
 }
 
 export const CONVERSATION_VIEW_REPOSITORY = 'ConversationViewRepository';

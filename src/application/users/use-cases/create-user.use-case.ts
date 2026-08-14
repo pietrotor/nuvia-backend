@@ -16,6 +16,8 @@ import {
 } from '@domain/users/ports/password-hasher.port';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
+import { PlanCap } from '@domain/subscriptions/value-objects/plan-config.vo';
 import { CreateUserDto } from '../dto/create-user.dto';
 
 @Injectable()
@@ -26,12 +28,15 @@ export class CreateUserUseCase {
     @Inject(PASSWORD_HASHER_PORT)
     private readonly passwordHasher: PasswordHasherPort,
     private readonly audit: AuditRecorder,
+    private readonly entitlements: PlanEntitlements,
   ) {}
 
   async execute(dto: CreateUserDto): Promise<PublicUser> {
     if (dto.role === Role.SUPERADMIN) {
       throw new SuperadminCannotBelongToTenantError();
     }
+
+    await this.entitlements.assertWithinCap(PlanCap.PANEL_USERS);
 
     const email = dto.email.trim().toLowerCase();
 

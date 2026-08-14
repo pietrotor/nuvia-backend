@@ -9,6 +9,7 @@ import {
 } from 'drizzle-orm/pg-core';
 
 import { tenants } from './tenant.schema';
+import { professionals } from './professional.schema';
 
 export const roleEnum = pgEnum('role', ['owner', 'staff', 'superadmin']);
 
@@ -19,6 +20,10 @@ export const users = pgTable(
     // Null only for superadmin, which operates across tenants.
     tenantId: uuid('tenant_id').references(() => tenants.id, {
       onDelete: 'cascade',
+    }),
+    // Optional link so a professional role can later see their own agenda.
+    professionalId: uuid('professional_id').references(() => professionals.id, {
+      onDelete: 'set null',
     }),
     name: varchar('name', { length: 255 }).notNull(),
     email: varchar('email', { length: 255 }).notNull().unique(),
@@ -34,7 +39,10 @@ export const users = pgTable(
       .defaultNow()
       .$onUpdate(() => new Date()),
   },
-  (t) => [index('user_tenant_idx').on(t.tenantId)],
+  (t) => [
+    index('user_tenant_idx').on(t.tenantId),
+    index('user_professional_idx').on(t.professionalId),
+  ],
 );
 
 export type UserSchema = typeof users.$inferSelect;

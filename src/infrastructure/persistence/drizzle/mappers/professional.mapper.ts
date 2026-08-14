@@ -7,8 +7,9 @@ export class ProfessionalMapper {
       id: row.id,
       tenantId: row.tenantId,
       name: row.name,
-      weeklyHours: row.weeklyHours,
       isActive: row.isActive,
+      avatarStorageKey: row.avatarStorageKey,
+      avatarMimeType: row.avatarMimeType,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });

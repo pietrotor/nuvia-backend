@@ -3,6 +3,7 @@ import { Role } from '../value-objects/role.vo';
 export interface UserProps {
   id: string;
   tenantId: string | null;
+  professionalId?: string | null;
   name: string;
   email: string;
   password: string;
@@ -18,6 +19,7 @@ export type PublicUser = Omit<UserProps, 'password'>;
 export class User {
   public readonly id: string;
   public readonly tenantId: string | null;
+  public readonly professionalId: string | null;
   public readonly name: string;
   public readonly email: string;
   public readonly password: string;
@@ -30,6 +32,7 @@ export class User {
   constructor(props: UserProps) {
     this.id = props.id;
     this.tenantId = props.tenantId;
+    this.professionalId = props.professionalId ?? null;
     this.name = props.name;
     this.email = props.email;
     this.password = props.password;
@@ -64,6 +67,7 @@ export class User {
     return {
       id: this.id,
       tenantId: this.tenantId,
+      professionalId: this.professionalId,
       name: this.name,
       email: this.email,
       role: this.role,

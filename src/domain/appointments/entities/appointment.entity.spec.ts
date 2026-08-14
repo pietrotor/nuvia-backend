@@ -1,3 +1,5 @@
+import { Currency } from '@domain/common/value-objects/currency.vo';
+import { Money } from '@domain/common/value-objects/money.vo';
 import { InvalidAppointmentTransitionError } from '../exceptions/appointment.exceptions';
 import { Appointment, AppointmentStatus } from './appointment.entity';
 
@@ -5,12 +7,14 @@ const build = (status: AppointmentStatus): Appointment =>
   new Appointment({
     id: 'a1',
     tenantId: 't1',
+    branchId: 'b1',
     clientId: 'c1',
     professionalId: 'p1',
     serviceId: 's1',
     startsAt: new Date('2026-08-05T15:00:00.000Z'),
     endsAt: new Date('2026-08-05T16:00:00.000Z'),
     status,
+    price: Money.of('150.00', Currency.BOB),
   });
 
 describe('Appointment', () => {
@@ -55,7 +59,7 @@ describe('Appointment', () => {
     const moved = original.rescheduleTo(
       new Date('2026-08-06T10:00:00.000Z'),
       new Date('2026-08-06T11:00:00.000Z'),
-      'p2',
+      { professionalId: 'p2' },
     );
 
     expect(moved.status).toBe(AppointmentStatus.PENDING_DEPOSIT);

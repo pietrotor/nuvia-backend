@@ -10,6 +10,9 @@ export class UserResponseDto {
   @ApiProperty({ nullable: true })
   tenantId: string | null;
 
+  @ApiProperty({ nullable: true })
+  professionalId: string | null;
+
   @ApiProperty()
   name: string;
 
@@ -29,6 +32,7 @@ export class UserResponseDto {
     return {
       id: user.id,
       tenantId: user.tenantId,
+      professionalId: user.professionalId ?? null,
       name: user.name,
       email: user.email,
       phone: user.phone ?? null,

@@ -21,7 +21,7 @@ import { UpdateServiceDto } from '@application/services/dto/update-service.dto';
 import { CreateServiceUseCase } from '@application/services/use-cases/create-service.use-case';
 import { ListServicesUseCase } from '@application/services/use-cases/list-services.use-case';
 import { UpdateServiceUseCase } from '@application/services/use-cases/update-service.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 import { ServiceResponseDto } from './dto/service-response.dto';
 
@@ -36,7 +36,7 @@ export class ServicesController {
   ) {}
 
   @Get()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.SERVICES_READ)
   @ApiOperation({ summary: 'Lists the service catalog' })
   @ApiResponse({ status: 200, type: [ServiceResponseDto] })
   async list(): Promise<ServiceResponseDto[]> {
@@ -44,7 +44,7 @@ export class ServicesController {
   }
 
   @Post()
-  @Auth(Role.OWNER)
+  @Auth(Permission.SERVICES_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Creates a service' })
   @ApiResponse({ status: 201, type: ServiceResponseDto })
@@ -53,7 +53,7 @@ export class ServicesController {
   }
 
   @Patch(':id')
-  @Auth(Role.OWNER)
+  @Auth(Permission.SERVICES_WRITE)
   @ApiOperation({ summary: 'Updates or deactivates a service' })
   @ApiResponse({ status: 200, type: ServiceResponseDto })
   async update(

@@ -1,8 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, count, desc, eq } from 'drizzle-orm';
 
 import {
-  ConversationView,
+  ConversationListResult,
   ConversationViewRepository,
 } from '@domain/conversations/repositories/conversation-view.repository';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
@@ -27,7 +27,14 @@ export class DrizzleConversationViewRepository
   async list(input: {
     limit: number;
     offset: number;
-  }): Promise<ConversationView[]> {
+  }): Promise<ConversationListResult> {
+    const where = this.scope(conversations);
+
+    const [countRow] = await this.drizzle.db
+      .select({ total: count() })
+      .from(conversations)
+      .where(where);
+
     const rows = await this.drizzle.db
       .select({
         conversation: conversations,
@@ -45,14 +52,17 @@ export class DrizzleConversationViewRepository
           eq(clients.tenantId, conversations.tenantId),
         ),
       )
-      .where(this.scope(conversations))
+      .where(where)
       .orderBy(desc(conversations.lastActivityAt))
       .limit(input.limit)
       .offset(input.offset);
 
-    return rows.map((row) => ({
-      conversation: ConversationMapper.toDomain(row.conversation),
-      client: row.client?.id ? row.client : null,
-    }));
+    return {
+      total: Number(countRow?.total ?? 0),
+      rows: rows.map((row) => ({
+        conversation: ConversationMapper.toDomain(row.conversation),
+        client: row.client?.id ? row.client : null,
+      })),
+    };
   }
 }

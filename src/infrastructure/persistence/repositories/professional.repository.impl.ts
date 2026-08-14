@@ -28,7 +28,6 @@ export class DrizzleProfessionalRepository
     try {
       const [created] = await this.insertInto(professionals, {
         name: data.name,
-        weeklyHours: data.weeklyHours,
         isActive: data.isActive ?? true,
       });
       return ProfessionalMapper.toDomain(created);

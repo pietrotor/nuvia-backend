@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 
 import { tenants } from './tenant.schema';
 import { clients } from './client.schema';
+import { branches } from './branch.schema';
 
 export const messageDirectionEnum = pgEnum('message_direction', [
   'inbound',
@@ -36,6 +37,10 @@ export const conversations = pgTable(
     clientId: uuid('client_id').references(() => clients.id, {
       onDelete: 'restrict',
     }),
+    // Branch resolved for this conversation; null until the client picks one.
+    branchId: uuid('branch_id').references(() => branches.id, {
+      onDelete: 'set null',
+    }),
     clientPhoneE164: varchar('client_phone_e164', { length: 20 }).notNull(),
     botPaused: boolean('bot_paused').notNull().default(false),
     botPausedAt: timestamp('bot_paused_at', { withTimezone: true }),
@@ -54,6 +59,7 @@ export const conversations = pgTable(
   (t) => [
     index('conversations_tenant_idx').on(t.tenantId),
     index('conversations_client_idx').on(t.clientId),
+    index('conversations_branch_idx').on(t.branchId),
     uniqueIndex('conversations_tenant_phone_uq').on(
       t.tenantId,
       t.clientPhoneE164,
@@ -103,6 +109,9 @@ export const messages = pgTable(
     uniqueIndex('messages_tenant_reply_uq')
       .on(t.tenantId, t.inReplyToProviderMessageId)
       .where(sql`${t.inReplyToProviderMessageId} is not null`),
+    index('messages_tenant_agent_reply_idx')
+      .on(t.tenantId, t.occurredAt)
+      .where(sql`${t.promptFingerprint} is not null`),
   ],
 );
 

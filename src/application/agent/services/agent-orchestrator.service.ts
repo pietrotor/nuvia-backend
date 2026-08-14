@@ -1,30 +1,84 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { ListClientAppointmentsUseCase } from '@application/appointments/use-cases/list-client-appointments.use-case';
 import { GetBusinessConfigUseCase } from '@application/business-config/use-cases/get-business-config.use-case';
-import { LLM_PORT, LlmMessage, LlmPort } from '@domain/agent/ports/llm.port';
+import {
+  LLM_PORT,
+  LlmMessage,
+  LlmPort,
+  LlmToolChoice,
+} from '@domain/agent/ports/llm.port';
 import { PromptChannel } from '@domain/agent/prompt/prompt-fragment';
+import {
+  clockTimes,
+  unofferedTimes,
+} from '@domain/agent/services/offered-times';
+import {
+  DEPOSIT_QR_QUEUED,
+  OutboundClaim,
+  unsupportedClaims,
+} from '@domain/agent/services/outbound-claim';
+import {
+  BRANCH_REPOSITORY,
+  BranchRepository,
+} from '@domain/branches/repositories/branch.repository';
 import { CLOCK_PORT, ClockPort } from '@domain/common/ports/clock.port';
+import { LOGGER_PORT, LoggerPort } from '@domain/common/ports/logger.port';
 import {
   Message,
   MessageDirection,
 } from '@domain/conversations/entities/message.entity';
+import {
+  CONVERSATION_REPOSITORY,
+  ConversationRepository,
+} from '@domain/conversations/repositories/conversation.repository';
 import {
   TENANT_REPOSITORY,
   TenantRepository,
 } from '@domain/tenants/repositories/tenant.repository';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
 import { toWhatsAppText } from '../messages/whatsapp-text';
-import { AgentContext } from '../tools/agent-tool';
+import {
+  AgentContext,
+  AgentFollowUp,
+  AgentToolResult,
+  InboundAgentContext,
+} from '../tools/agent-tool';
 import { AgentPromptComposer } from './agent-prompt.composer';
 import { AgentToolRegistry } from './agent-tool.registry';
 
 const MAX_TOOL_ROUNDS = 5;
 const FALLBACK_TIMEZONE = 'America/La_Paz';
 
+// Sent back to the model when it announced an action it never took. Written as if the
+// client could not see it, because she cannot: it only exists inside this round.
+const CLAIM_CORRECTION =
+  'Tu último mensaje da por hecha una acción que no ejecutaste: no llamaste a la herramienta que la realiza, así que para el sistema no ocurrió. Ejecutá ahora la herramienta correspondiente. Si no se puede (el horario no está libre, faltan datos, la herramienta falla), no la fuerces: derivá con request_handoff.';
+
+// Sent back when the answer names hours the agenda never returned. Spelling out the ones
+// it may use turns the rewrite into a copy, instead of another guess.
+function scheduleCorrection(offerable: readonly string[]): string {
+  const allowed = [...new Set(offerable.flatMap(clockTimes))].sort();
+
+  return `Tu último mensaje nombra horarios que ninguna herramienta devolvió: los completaste vos. Los únicos que podés nombrar ahora son ${allowed.join(', ')}. Reescribilo ofreciendo como mucho cuatro de esos, sin desglosar ninguna franja en horarios sueltos. Si te faltan opciones, volvé a llamar a find_availability en lugar de inventarlas.`;
+}
+
 export interface AgentResponse {
   text: string;
   // Which prompt produced this answer: stored with the outbound message.
   promptFingerprint: string;
+  // Outbounds the tools decided are due, sent after this answer.
+  followUps: AgentFollowUp[];
+}
+
+// Everything the tool loop accumulates across rounds, including the retry.
+interface AgentSession {
+  messages: LlmMessage[];
+  followUps: AgentFollowUp[];
+  // What actually happened this turn, which is what the answer is checked against.
+  evidence: string[];
+  // Every clock time the tools put on the table this turn.
+  offerableTimes: string[];
 }
 
 @Injectable()
@@ -35,79 +89,251 @@ export class AgentOrchestrator {
     private readonly tools: AgentToolRegistry,
     @Inject(TENANT_REPOSITORY)
     private readonly tenants: TenantRepository,
+    @Inject(CONVERSATION_REPOSITORY)
+    private readonly conversations: ConversationRepository,
+    @Inject(BRANCH_REPOSITORY)
+    private readonly branches: BranchRepository,
+    private readonly listClientAppointments: ListClientAppointmentsUseCase,
     @Inject(CLOCK_PORT)
     private readonly clock: ClockPort,
     private readonly promptComposer: AgentPromptComposer,
+    @Inject(LOGGER_PORT)
+    private readonly logger: LoggerPort,
   ) {}
 
   async respond(
     history: Message[],
-    context: AgentContext,
+    inbound: InboundAgentContext,
   ): Promise<AgentResponse> {
     const config = await this.getBusinessConfig.execute();
     const tenant = await this.tenants.findById(config.tenantId);
+    const timezone = tenant?.timezone ?? FALLBACK_TIMEZONE;
+    const branchId = await this.resolveBranchId(inbound);
+    const context: AgentContext = { ...inbound, timezone, branchId };
     const prompt = await this.promptComposer.compose({
       config,
-      timezone: tenant?.timezone ?? FALLBACK_TIMEZONE,
+      timezone,
       channel: PromptChannel.WHATSAPP,
       now: this.clock.now(),
+      clientId: context.clientId,
+      branchId,
     });
-    const messages: LlmMessage[] = [
-      { role: 'system', content: prompt.staticText, cacheable: true },
-      { role: 'system', content: prompt.volatileText },
-      ...history
-        .filter((message) => message.content)
-        .map<LlmMessage>((message) => ({
-          role:
-            message.direction === MessageDirection.INBOUND
-              ? 'user'
-              : 'assistant',
-          content: message.content ?? '',
-        })),
-    ];
+    const session: AgentSession = {
+      messages: [
+        { role: 'system', content: prompt.staticText, cacheable: true },
+        { role: 'system', content: prompt.volatileText },
+        ...history
+          .filter((message) => message.content)
+          .map<LlmMessage>((message) => ({
+            role:
+              message.direction === MessageDirection.INBOUND
+                ? 'user'
+                : 'assistant',
+            content: message.content ?? '',
+          })),
+      ],
+      followUps: [],
+      evidence: [],
+      offerableTimes: [],
+    };
 
+    const answer = await this.answerWithTools(session, context);
+    const claimed = await this.verifyClaims(answer, session, context);
+    const text = await this.verifyOfferedTimes(claimed, session, context);
+
+    return {
+      text: toWhatsAppText(text),
+      promptFingerprint: prompt.fingerprint,
+      followUps: session.followUps,
+    };
+  }
+
+  // Pin a branch when the conversation already has one, the client has an upcoming
+  // appointment at one, or the tenant only has a single active location.
+  private async resolveBranchId(
+    inbound: InboundAgentContext,
+  ): Promise<string | null> {
+    const conversation = await this.conversations.findById(
+      inbound.conversationId,
+    );
+    if (conversation?.branchId) {
+      return conversation.branchId;
+    }
+
+    const upcoming = await this.listClientAppointments.execute({
+      clientId: inbound.clientId,
+      onlyUpcoming: true,
+    });
+    const fromAppointment = upcoming.find(
+      (view) => view.appointment.branchId !== null,
+    )?.appointment.branchId;
+    if (fromAppointment) {
+      await this.conversations.setBranch(
+        inbound.conversationId,
+        fromAppointment,
+      );
+      return fromAppointment;
+    }
+
+    const active = await this.branches.findActive();
+    if (active.length === 1) {
+      await this.conversations.setBranch(inbound.conversationId, active[0].id);
+      return active[0].id;
+    }
+
+    return null;
+  }
+
+  // An answer that announces a booking or a QR is only allowed out if the tool that
+  // performs it actually ran. Otherwise the model gets one round where it cannot reply in
+  // prose, so it either does the thing or hands off.
+  private async verifyClaims(
+    answer: string,
+    session: AgentSession,
+    context: AgentContext,
+  ): Promise<string> {
+    const claims = unsupportedClaims(answer, session.evidence);
+    if (claims.length === 0) return answer;
+
+    this.logger.warn(
+      `Answer claimed ${claims.join(', ')} with no tool to back it in conversation ${context.conversationId}: forcing a tool round`,
+      AgentOrchestrator.name,
+    );
+
+    session.messages.push({ role: 'assistant', content: answer });
+    session.messages.push({ role: 'user', content: CLAIM_CORRECTION });
+
+    const retried = await this.answerWithTools(session, context, 'any');
+    const stillUnsupported = unsupportedClaims(retried, session.evidence);
+    if (stillUnsupported.length === 0) return retried;
+
+    this.logger.error(
+      `Answer still claimed ${stillUnsupported.join(', ')} after the forced round in conversation ${context.conversationId}: handing off`,
+      undefined,
+      AgentOrchestrator.name,
+    );
+    await this.executeTool(
+      'request_handoff',
+      JSON.stringify({ reason: `unverified_${stillUnsupported.join('_')}` }),
+      context,
+    );
+
+    return stillUnsupported.includes(OutboundClaim.BOOKING)
+      ? AgentOutboundCopy.unverifiedBooking
+      : AgentOutboundCopy.unverifiedDepositQr;
+  }
+
+  // The agenda is the only place hours come from. When the answer names a time no tool
+  // returned, the model is reading a free window as a list and writing it out slot by
+  // slot, so it gets one round to rewrite with the times it was actually given.
+  private async verifyOfferedTimes(
+    answer: string,
+    session: AgentSession,
+    context: AgentContext,
+  ): Promise<string> {
+    const invented = unofferedTimes(answer, session.offerableTimes);
+    if (invented.length === 0) return answer;
+
+    this.logger.warn(
+      `Answer offered ${invented.join(', ')}, which no tool returned, in conversation ${context.conversationId}: asking for a rewrite`,
+      AgentOrchestrator.name,
+    );
+
+    session.messages.push({ role: 'assistant', content: answer });
+    session.messages.push({
+      role: 'user',
+      content: scheduleCorrection(session.offerableTimes),
+    });
+
+    const retried = await this.answerWithTools(session, context);
+    const stillInvented = unofferedTimes(retried, session.offerableTimes);
+    if (stillInvented.length === 0) return retried;
+
+    this.logger.error(
+      `Answer still offered ${stillInvented.join(', ')} after the rewrite in conversation ${context.conversationId}: handing off`,
+      undefined,
+      AgentOrchestrator.name,
+    );
+    await this.executeTool(
+      'request_handoff',
+      JSON.stringify({ reason: 'invented_schedule' }),
+      context,
+    );
+
+    return AgentOutboundCopy.unverifiedSchedule;
+  }
+
+  // `firstChoice` is 'any' only on the corrective round: the provider then prefills the
+  // assistant turn, so the model cannot answer in prose until a tool has run. Later rounds
+  // go back to 'auto' so it can write the reply.
+  private async answerWithTools(
+    session: AgentSession,
+    context: AgentContext,
+    firstChoice: LlmToolChoice = 'auto',
+  ): Promise<string> {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
       const result = await this.llm.chat({
-        messages,
+        messages: session.messages,
         tools: this.tools.definitions(),
+        toolChoice: round === 0 ? firstChoice : 'auto',
       });
       if (result.toolCalls.length === 0) {
-        return {
-          text: toWhatsAppText(
-            result.content?.trim() || AgentOutboundCopy.incompleteConsultation,
-          ),
-          promptFingerprint: prompt.fingerprint,
-        };
+        return (
+          result.content?.trim() || AgentOutboundCopy.incompleteConsultation
+        );
       }
 
-      messages.push({
+      session.messages.push({
         role: 'assistant',
         content: result.content ?? '',
         toolCalls: result.toolCalls,
       });
       for (const call of result.toolCalls) {
-        messages.push({
+        const toolResult = await this.executeTool(
+          call.name,
+          call.arguments,
+          context,
+        );
+        if (toolResult.status === 'success') {
+          session.evidence.push(call.name);
+        } else {
+          this.logger.warn(
+            `Tool ${call.name} returned ${toolResult.status}: ${toolResult.summary}`,
+            AgentOrchestrator.name,
+          );
+        }
+        if (toolResult.offerableTimes?.length) {
+          session.offerableTimes.push(...toolResult.offerableTimes);
+        }
+        if (toolResult.followUp) {
+          session.followUps.push(toolResult.followUp);
+          if (toolResult.followUp.kind === 'deposit_qr') {
+            session.evidence.push(DEPOSIT_QR_QUEUED);
+          }
+        }
+        session.messages.push({
           role: 'tool',
           name: call.name,
           toolCallId: call.id,
-          content: JSON.stringify(
-            await this.executeTool(call.name, call.arguments, context),
-          ),
+          // The follow-up is an instruction for us, not context for the model.
+          content: JSON.stringify({
+            status: toolResult.status,
+            summary: toolResult.summary,
+            data: toolResult.data,
+            nextActions: toolResult.nextActions,
+          }),
         });
       }
     }
 
-    return {
-      text: AgentOutboundCopy.needsHumanContinuation,
-      promptFingerprint: prompt.fingerprint,
-    };
+    return AgentOutboundCopy.needsHumanContinuation;
   }
 
   private async executeTool(
     name: string,
     rawArguments: string,
     context: AgentContext,
-  ) {
+  ): Promise<AgentToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
       return {
@@ -119,7 +345,16 @@ export class AgentOrchestrator {
 
     try {
       return await tool.execute(JSON.parse(rawArguments), context);
-    } catch {
+    } catch (error) {
+      // The model only sees a generic failure, so without this the tool error is
+      // lost and the conversation looks like the agent simply changed its mind.
+      this.logger.error(
+        `Tool ${name} failed for conversation ${context.conversationId} with arguments ${rawArguments}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+        error instanceof Error ? error.stack : undefined,
+        AgentOrchestrator.name,
+      );
       return {
         status: 'error',
         summary: 'No se pudo ejecutar la acción solicitada.',

@@ -76,7 +76,8 @@ Stable ports (tokens registered only in infrastructure modules):
   Unscoped methods are named `...Unscoped`.
 - Background work: `tenantContext.runWithTenant(tenantId, fn)` per tenant.
 
-Roles: `owner`, `staff` (in-tenant), `superadmin` (explicit in `@Auth`, no inherited tenant perms).
+Roles: `owner`, `staff` (in-tenant), `superadmin`. Controllers declare `Permission`s via `@Auth`;
+`permissionsForRole` maps role → permissions. Branch scope via `user_branches` (no rows = whole tenant).
 
 ## Errors
 
@@ -85,14 +86,16 @@ Domain/application throw `DomainException` + `ErrorCode` (never HTTP exceptions,
 
 ## Current domain
 
-**Implemented:** `Tenant`, `User`, `AuditLog` (tenancy + auth scaffold). Some `Tenant` fields may still
-reflect the previous product template — clean them when adding `BusinessConfig` (see architecture.md).
+**Implemented:** tenants, business-config (brand identity), **branches** (location hours + catalog
+offers + rotating staff), professionals/services, appointments + availability, schedule blocks,
+deposit QRs, clients, conversations, WhatsApp agent tools (branch-aware), messaging/LLM/storage
+adapters, BullMQ, SSE agenda events.
 
-**Not implemented yet:** professionals, services, appointments, availability, deposits, packages,
-clients, conversations, agent, reminders, subscriptions, messaging/LLM/storage adapters, BullMQ.
+**Not implemented yet:** deposit receipt verification queue, packages, reminders, subscriptions,
+public booking page, fine-grained panel roles (`manager` / `receptionist` / `professional`).
 
-Shared booking path when built: `AvailabilityCalculator` + `BookAppointmentUseCase` for WhatsApp,
-panel, and public booking page.
+Shared booking path: `BranchResolver` → `ScheduleContextResolver` → `AvailabilityCalculator` →
+`BookAppointmentUseCase` (WhatsApp, panel, and future public page).
 
 ## Environment variables
 

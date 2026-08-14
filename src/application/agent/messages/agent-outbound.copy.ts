@@ -11,4 +11,17 @@ export const AgentOutboundCopy = {
 
   needsHumanContinuation:
     'Necesito que una persona continúe esta consulta. Ya aviso al equipo.',
+
+  // Replaces an answer that announced a booking the agenda never received. Better an
+  // honest correction than a client showing up to a turn that does not exist.
+  unverifiedBooking:
+    'Perdón, me adelanté: no pude dejar la reserva hecha. Le paso tu pedido al equipo para que lo confirmen con vos.',
+
+  // Replaces an answer that kept offering hours the agenda never gave back. Sending it as
+  // written would put the client in front of a slot that does not exist.
+  unverifiedSchedule:
+    'Perdón, me hice un lío con los horarios y prefiero no pasarte uno equivocado. Le aviso al equipo para que te confirmen los que están libres.',
+
+  unverifiedDepositQr:
+    'Perdón, no pude enviarte el QR desde acá. Ya aviso al equipo para que te pasen los datos del pago.',
 } as const;

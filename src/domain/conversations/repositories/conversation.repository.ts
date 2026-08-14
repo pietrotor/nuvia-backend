@@ -11,6 +11,9 @@ export interface ConversationRepository {
   pauseBot(id: string): Promise<Conversation | null>;
   resumeBot(id: string): Promise<Conversation | null>;
   recordManualReply(id: string, occurredAt: Date): Promise<Conversation | null>;
+  setBranch(id: string, branchId: string): Promise<Conversation | null>;
+  assignBranchToAllWithoutBranch(branchId: string): Promise<number>;
+  deleteAllUnscoped(): Promise<void>;
 }
 
 export const CONVERSATION_REPOSITORY = 'ConversationRepository';

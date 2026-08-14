@@ -15,6 +15,7 @@ import { sql } from 'drizzle-orm';
 import { currencyEnum } from './currency.schema';
 import { tenants } from './tenant.schema';
 import { professionals } from './professional.schema';
+import { depositQrs } from './deposit.schema';
 
 export const services = pgTable(
   'services',
@@ -32,6 +33,16 @@ export const services = pgTable(
     requiresDeposit: boolean('requires_deposit').notNull().default(false),
     depositAmount: numeric('deposit_amount', { precision: 12, scale: 2 }),
     depositPercent: integer('deposit_percent'),
+    // Null means "use the QR the business marked as default"; a value is only for
+    // services charged to a different account.
+    depositQrId: uuid('deposit_qr_id').references(() => depositQrs.id, {
+      onDelete: 'set null',
+    }),
+    // Whether the agent offers the client a professional to pick. False for services where
+    // whoever is free will do, so it can go straight to the earliest slot.
+    clientChoosesProfessional: boolean('client_chooses_professional')
+      .notNull()
+      .default(true),
     isActive: boolean('is_active').notNull().default(true),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -59,6 +70,10 @@ export const services = pgTable(
         or
         (${t.requiresDeposit} = true and num_nonnulls(${t.depositAmount}, ${t.depositPercent}) = 1)
       )`,
+    ),
+    check(
+      'services_deposit_qr_requires_deposit',
+      sql`${t.depositQrId} is null or ${t.requiresDeposit} = true`,
     ),
     index('services_tenant_idx').on(t.tenantId),
   ],

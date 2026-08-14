@@ -5,7 +5,6 @@ import {
   AgentTone,
   AgentPolicy,
   BookingPolicy,
-  WeeklyHours,
 } from '../entities/business-config.entity';
 import { BusinessCategory } from '../value-objects/business-category.vo';
 
@@ -15,14 +14,11 @@ export interface CreateBusinessConfigData {
   tone?: AgentTone;
   businessCategory?: BusinessCategory;
   currency?: Currency;
-  address?: string | null;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
-  businessHours: WeeklyHours;
   bookingPolicy: BookingPolicy;
   agentPolicy?: AgentPolicy;
   faq?: Record<string, string>;
-  staticDepositQrUrl?: string | null;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
   evolutionWebhookTokenHash?: string | null;
@@ -35,14 +31,11 @@ export interface UpdateBusinessConfigData {
   // Support only: the owner cannot change the trade its agent was set up for.
   businessCategory?: BusinessCategory;
   currency?: Currency;
-  address?: string | null;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
-  businessHours?: WeeklyHours;
   bookingPolicy?: BookingPolicy;
   agentPolicy?: AgentPolicy;
   faq?: Record<string, string>;
-  staticDepositQrUrl?: string | null;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
   evolutionWebhookTokenHash?: string | null;

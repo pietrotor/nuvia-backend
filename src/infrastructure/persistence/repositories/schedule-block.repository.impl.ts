@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { and, eq, gt, lt, or, isNull } from 'drizzle-orm';
+import { SQL, and, eq, gt, lt, or, isNull } from 'drizzle-orm';
 
 import {
   CreateScheduleBlockData,
@@ -27,6 +27,7 @@ export class DrizzleScheduleBlockRepository
   async create(data: CreateScheduleBlockData): Promise<ScheduleBlock> {
     try {
       const [created] = await this.insertInto(scheduleBlocks, {
+        branchId: data.branchId,
         professionalId: data.professionalId ?? null,
         startsAt: data.startsAt,
         endsAt: data.endsAt,
@@ -51,18 +52,12 @@ export class DrizzleScheduleBlockRepository
     professionalId: string | null;
     startsAt: Date;
     endsAt: Date;
+    branchId?: string;
   }): Promise<ScheduleBlock[]> {
-    const professionalFilter = input.professionalId
-      ? or(
-          isNull(scheduleBlocks.professionalId),
-          eq(scheduleBlocks.professionalId, input.professionalId),
-        )
-      : isNull(scheduleBlocks.professionalId);
-
     const rows = await this.selectFrom(
       scheduleBlocks,
       and(
-        professionalFilter!,
+        this.appliesTo(input.professionalId, input.branchId),
         eq(scheduleBlocks.isActive, true),
         lt(scheduleBlocks.startsAt, input.endsAt),
         gt(scheduleBlocks.endsAt, input.startsAt),
@@ -72,26 +67,21 @@ export class DrizzleScheduleBlockRepository
     return rows.map(ScheduleBlockMapper.toDomain);
   }
 
-  async findInRange(
-    from: Date,
-    to: Date,
-    professionalId?: string,
-  ): Promise<ScheduleBlock[]> {
-    const filters = [
-      eq(scheduleBlocks.isActive, true),
-      lt(scheduleBlocks.startsAt, to),
-      gt(scheduleBlocks.endsAt, from),
-    ];
-    if (professionalId) {
-      filters.push(
-        or(
-          isNull(scheduleBlocks.professionalId),
-          eq(scheduleBlocks.professionalId, professionalId),
-        )!,
-      );
-    }
-
-    const rows = await this.selectFrom(scheduleBlocks, and(...filters)!);
+  async findInRange(input: {
+    from: Date;
+    to: Date;
+    professionalId?: string;
+    branchId?: string;
+  }): Promise<ScheduleBlock[]> {
+    const rows = await this.selectFrom(
+      scheduleBlocks,
+      and(
+        this.appliesTo(input.professionalId ?? null, input.branchId),
+        eq(scheduleBlocks.isActive, true),
+        lt(scheduleBlocks.startsAt, input.to),
+        gt(scheduleBlocks.endsAt, input.from),
+      )!,
+    );
     return rows.map(ScheduleBlockMapper.toDomain);
   }
 
@@ -111,7 +101,76 @@ export class DrizzleScheduleBlockRepository
     }
   }
 
+  async assignBranchToAllWithoutBranch(branchId: string): Promise<number> {
+    const updated = await this.updateIn(
+      scheduleBlocks,
+      { branchId },
+      isNull(scheduleBlocks.branchId),
+    );
+    return updated.length;
+  }
+
   async deleteAllUnscoped(): Promise<void> {
     await this.drizzle.db.delete(scheduleBlocks);
+  }
+
+  // Blocks that apply when checking availability for (branchId, professionalId):
+  // 1. null/null — whole business
+  // 2. null/branch — branch closed
+  // 3. professional/null — absent everywhere
+  // 4. professional/branch — absent at this branch
+  // Without a branch, only unscoped (branchId null) blocks are considered.
+  private appliesTo(
+    professionalId: string | null,
+    branchId?: string,
+  ): SQL | undefined {
+    if (branchId && professionalId) {
+      return or(
+        and(
+          isNull(scheduleBlocks.professionalId),
+          isNull(scheduleBlocks.branchId),
+        ),
+        and(
+          isNull(scheduleBlocks.professionalId),
+          eq(scheduleBlocks.branchId, branchId),
+        ),
+        and(
+          eq(scheduleBlocks.professionalId, professionalId),
+          isNull(scheduleBlocks.branchId),
+        ),
+        and(
+          eq(scheduleBlocks.professionalId, professionalId),
+          eq(scheduleBlocks.branchId, branchId),
+        ),
+      );
+    }
+
+    if (branchId) {
+      return or(
+        and(
+          isNull(scheduleBlocks.professionalId),
+          isNull(scheduleBlocks.branchId),
+        ),
+        and(
+          isNull(scheduleBlocks.professionalId),
+          eq(scheduleBlocks.branchId, branchId),
+        ),
+      );
+    }
+
+    if (professionalId) {
+      return and(
+        isNull(scheduleBlocks.branchId),
+        or(
+          isNull(scheduleBlocks.professionalId),
+          eq(scheduleBlocks.professionalId, professionalId),
+        ),
+      );
+    }
+
+    return and(
+      isNull(scheduleBlocks.branchId),
+      isNull(scheduleBlocks.professionalId),
+    );
   }
 }

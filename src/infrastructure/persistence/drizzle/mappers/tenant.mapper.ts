@@ -10,7 +10,6 @@ export class TenantMapper {
       name: row.name,
       status: row.status as TenantStatus,
       timezone: row.timezone,
-      plan: row.plan,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });

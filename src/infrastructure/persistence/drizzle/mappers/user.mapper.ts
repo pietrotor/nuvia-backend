@@ -7,6 +7,7 @@ export class UserMapper {
     return new User({
       id: row.id,
       tenantId: row.tenantId,
+      professionalId: row.professionalId,
       name: row.name,
       email: row.email,
       phone: row.phone,

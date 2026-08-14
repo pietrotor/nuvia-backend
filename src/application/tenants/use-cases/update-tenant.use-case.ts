@@ -39,7 +39,6 @@ export class UpdateTenantUseCase {
       before: {
         name: current.name,
         timezone: current.timezone,
-        plan: current.plan,
       },
       after: dto,
     });

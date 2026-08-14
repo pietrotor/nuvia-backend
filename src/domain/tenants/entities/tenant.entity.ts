@@ -5,7 +5,6 @@ export interface TenantProps {
   name: string;
   status: TenantStatus;
   timezone: string;
-  plan?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -15,7 +14,6 @@ export class Tenant {
   public readonly name: string;
   public readonly status: TenantStatus;
   public readonly timezone: string;
-  public readonly plan: string | null;
   public readonly createdAt?: Date;
   public readonly updatedAt?: Date;
 
@@ -24,7 +22,6 @@ export class Tenant {
     this.name = props.name;
     this.status = props.status;
     this.timezone = props.timezone;
-    this.plan = props.plan ?? null;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }

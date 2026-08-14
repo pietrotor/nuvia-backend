@@ -12,9 +12,4 @@ export class UpdateTenantDto {
   @IsOptional()
   @IsString()
   timezone?: string;
-
-  @ApiProperty({ example: 'trial', required: false })
-  @IsOptional()
-  @IsString()
-  plan?: string;
 }

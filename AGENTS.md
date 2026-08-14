@@ -37,6 +37,11 @@ con owner y staff (`Secreta123`) y solo funciona fuera de producción.
 - **WhatsApp:** Evolution API solo vía `MessagingPort` / `WhatsAppSessionPort` en
   `infrastructure/messaging/`.
 - **Async:** webhooks ACK inmediato → cola; jobs con `tenantContext.runWithTenant`.
+- **Tiempo real:** los use cases que mutan agenda llaman `AgendaEventPublisher.changed()` justo donde ya
+  llaman `AuditRecorder` — el publish es best-effort y jamás hace fallar la mutación. Va por
+  `EventBusPort` (Redis pub/sub, 16 canales fijos con ruteo por tenant en memoria) y sale al panel por
+  `GET /events` como SSE. El evento avisa *que* algo cambió, nunca manda entidades. Diseño y números en
+  [docs/plans/realtime-agenda-sse.md](../docs/plans/realtime-agenda-sse.md).
 - **Listados:** puertos de lectura (`*ViewRepository`) devuelven la entidad más los resúmenes de clienta,
   profesional y servicio en un solo query. El panel y el agente nunca reciben ids sueltos, y el
   repositorio de escritura no acumula métodos de listado.
@@ -70,7 +75,8 @@ request, repositorios scoped. Y los cuatro puertos de infraestructura con sus ad
 | E1 config | `business-config` (incluida la moneda del negocio), `services`, `professionals`, `schedule-blocks` con CRUD; falta subir logo |
 | E2 agente | Orquestador + registry; tools de catálogo, FAQ, disponibilidad, reservar, reagendar, cancelar, listar citas de la clienta y handoff. System prompt por capas según el rubro. Faltan tools de seña y saldo de paquete |
 | E3 panel | Disponibilidad, agenda por rango de fechas (calendario), reservar, reagendar, cancelar, atendida, plantón, bandeja de conversaciones con pausar / reactivar / responder como persona (responder pausa al agente) |
-| E4 señas, E5 paquetes, E6 recordatorios, E7 ficha, E8 reportes, E9 página pública, E10 suscripción | Sin empezar |
+| E4 señas, E5 paquetes, E6 recordatorios, E7 ficha, E8 reportes, E9 página pública | Sin empezar |
+| E10 suscripción | Parcial: planes + suscripciones por tenant, cuotas de respuestas de IA (derivadas de `messages`), topes de capacidad al crear, corte suave del agente, `GET /subscriptions/me` y API de superadmin. Falta cobro manual con QR |
 
 El **system prompt se compone por capas** y no se escribe suelto en ningún servicio: plataforma
 (no negociable) → canal → rubro (`BusinessConfig.businessCategory`) → voz del negocio

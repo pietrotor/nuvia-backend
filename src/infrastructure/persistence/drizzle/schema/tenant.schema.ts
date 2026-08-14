@@ -13,7 +13,6 @@ export const tenants = pgTable('tenants', {
     .notNull()
     .default('America/La_Paz'),
   status: tenantStatusEnum('status').notNull().default('trial'),
-  plan: varchar('plan', { length: 50 }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),

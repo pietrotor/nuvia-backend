@@ -14,6 +14,8 @@ export class ServiceMapper {
       requiresDeposit: row.requiresDeposit,
       depositAmount: row.depositAmount,
       depositPercent: row.depositPercent,
+      depositQrId: row.depositQrId,
+      clientChoosesProfessional: row.clientChoosesProfessional,
       isActive: row.isActive,
       professionalIds,
       createdAt: row.createdAt,

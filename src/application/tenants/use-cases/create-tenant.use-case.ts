@@ -15,6 +15,10 @@ import {
   WeeklyHours,
 } from '@domain/business-config/entities/business-config.entity';
 import {
+  BRANCH_REPOSITORY,
+  BranchRepository,
+} from '@domain/branches/repositories/branch.repository';
+import {
   USER_REPOSITORY,
   UserRepository,
 } from '@domain/users/repositories/user.repository';
@@ -31,6 +35,7 @@ import {
 } from '@domain/tenants/ports/tenant-context.port';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { EnsureTrialSubscriptionUseCase } from '@application/subscriptions/use-cases/ensure-trial-subscription.use-case';
 import { CreateTenantDto } from '../dto/create-tenant.dto';
 
 const DEFAULT_HOURS: WeeklyHours = {
@@ -42,6 +47,9 @@ const DEFAULT_HOURS: WeeklyHours = {
   sat: { start: '09:00', end: '13:00' },
   sun: null,
 };
+
+const PRIMARY_BRANCH_NAME = 'Casa Matriz';
+const PRIMARY_BRANCH_SLUG = 'casa-matriz';
 
 export interface CreateTenantResult {
   tenant: Tenant;
@@ -55,6 +63,8 @@ export class CreateTenantUseCase {
     private readonly tenantRepository: TenantRepository,
     @Inject(BUSINESS_CONFIG_REPOSITORY)
     private readonly businessConfigRepository: BusinessConfigRepository,
+    @Inject(BRANCH_REPOSITORY)
+    private readonly branchRepository: BranchRepository,
     @Inject(USER_REPOSITORY)
     private readonly userRepository: UserRepository,
     @Inject(PASSWORD_HASHER_PORT)
@@ -62,6 +72,7 @@ export class CreateTenantUseCase {
     @Inject(TENANT_CONTEXT_PORT)
     private readonly tenantContext: TenantContextPort,
     private readonly audit: AuditRecorder,
+    private readonly ensureTrialSubscription: EnsureTrialSubscriptionUseCase,
   ) {}
 
   async execute(dto: CreateTenantDto): Promise<CreateTenantResult> {
@@ -85,7 +96,6 @@ export class CreateTenantUseCase {
     const tenant = await this.tenantRepository.create({
       name: dto.name.trim(),
       timezone: dto.timezone,
-      plan: dto.plan,
     });
 
     const owner = await this.tenantContext.runWithTenant(
@@ -96,7 +106,6 @@ export class CreateTenantUseCase {
           agentName: 'Vale',
           tone: AgentTone.WARM,
           businessCategory: dto.businessCategory,
-          businessHours: DEFAULT_HOURS,
           bookingPolicy: {
             minLeadTimeHours: 2,
             cancelRescheduleHours: 24,
@@ -105,6 +114,15 @@ export class CreateTenantUseCase {
           },
           agentPolicy: DEFAULT_AGENT_POLICY,
           faq: {},
+        });
+
+        await this.branchRepository.create({
+          name: PRIMARY_BRANCH_NAME,
+          slug: PRIMARY_BRANCH_SLUG,
+          address: null,
+          weeklyHours: DEFAULT_HOURS,
+          isPrimary: true,
+          isActive: true,
         });
 
         return this.userRepository.create({
@@ -116,6 +134,8 @@ export class CreateTenantUseCase {
         });
       },
     );
+
+    await this.ensureTrialSubscription.execute(tenant.id);
 
     await this.audit.record({
       action: AuditAction.TENANT_CREATED,

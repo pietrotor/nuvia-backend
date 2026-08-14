@@ -1,16 +1,15 @@
-import { WeeklyHours } from '@domain/business-config/entities/business-config.entity';
 import { Professional } from '../entities/professional.entity';
 
 export interface CreateProfessionalData {
   name: string;
-  weeklyHours: WeeklyHours;
   isActive?: boolean;
 }
 
 export interface UpdateProfessionalData {
   name?: string;
-  weeklyHours?: WeeklyHours;
   isActive?: boolean;
+  avatarStorageKey?: string | null;
+  avatarMimeType?: string | null;
 }
 
 export interface ProfessionalRepository {

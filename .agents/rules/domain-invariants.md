@@ -20,6 +20,14 @@ Ninguna cita se agenda en un horario ocupado, fuera del horario del profesional,
 el panel y la página de reservas. Prohibido un segundo calculador de slots en el frontend o en el
 adapter de WhatsApp.
 
+**Duración de la cita:** el intervalo vive en `startsAt`/`endsAt`. El catálogo
+(`service.durationMinutes`) es el default. Solo el actor `STAFF` (panel) puede pasar
+`durationMinutes` al book/reschedule/availability; el agente y el booking público siempre
+usan la duración del servicio. Un reschedule de staff sin override **preserva** el span
+actual de la cita (no lo recalcula desde el catálogo). El override debe caer en la grilla
+de 15 min, con una excepción: si es exactamente `service.durationMinutes` se acepta tal
+cual, para que un servicio de 20 min pueda volver a su duración normal.
+
 ## 2. Un solo flujo de cobro de seña
 
 Todo cobro de seña ocurre por WhatsApp con verificación **manual**. La página de reservas agenda y,

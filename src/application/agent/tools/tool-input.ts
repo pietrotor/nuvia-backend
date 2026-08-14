@@ -49,6 +49,15 @@ export function optionalUuid(
     : requiredUuid(input, key);
 }
 
+export function optionalIsoDate(
+  input: Record<string, unknown>,
+  key: string,
+): string | undefined {
+  return input[key] === undefined || input[key] === null
+    ? undefined
+    : requiredIsoDate(input, key);
+}
+
 export function requiredIsoDate(
   input: Record<string, unknown>,
   key: string,

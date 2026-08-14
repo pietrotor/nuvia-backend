@@ -4,14 +4,12 @@ import { TenantStatus } from '../value-objects/tenant-status.vo';
 export interface CreateTenantData {
   name: string;
   timezone?: string;
-  plan?: string | null;
   status?: TenantStatus;
 }
 
 export interface UpdateTenantData {
   name?: string;
   timezone?: string;
-  plan?: string | null;
   status?: TenantStatus;
 }
 

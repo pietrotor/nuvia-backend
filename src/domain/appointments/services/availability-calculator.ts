@@ -11,6 +11,24 @@ export interface TimeSlot {
   endsAt: Date;
 }
 
+// Why a day has nothing to offer. An empty slot list collapses four different answers into
+// one, and "no hay disponibilidad" is the only sentence it can produce.
+export enum DayOutcome {
+  AVAILABLE = 'available',
+  CLOSED = 'closed',
+  SERVICE_DOES_NOT_FIT = 'service_does_not_fit',
+  FULLY_BOOKED = 'fully_booked',
+  TOO_SOON = 'too_soon',
+}
+
+export interface DayAvailability {
+  date: Date;
+  outcome: DayOutcome;
+  slots: TimeSlot[];
+  // Latest start whose treatment still ends before closing, regardless of who booked what.
+  lastStartThatFits: Date | null;
+}
+
 export interface AvailabilityInput {
   weeklyHours: WeeklyHours;
   durationMinutes: number;
@@ -20,9 +38,12 @@ export interface AvailabilityInput {
   blocks: ScheduleBlock[];
   timezone: string;
   slotStepMinutes?: number;
+  // Kept apart from `from` so a day lost to the booking lead time reports TOO_SOON instead
+  // of looking like a day nobody ever had free.
+  earliestStartAt?: Date;
 }
 
-const DAY_KEYS: (keyof WeeklyHours)[] = [
+export const DAY_KEYS: (keyof WeeklyHours)[] = [
   'mon',
   'tue',
   'wed',
@@ -43,8 +64,11 @@ function overlaps(aStart: Date, aEnd: Date, bStart: Date, bEnd: Date): boolean {
 
 export class AvailabilityCalculator {
   calculate(input: AvailabilityInput): TimeSlot[] {
-    const step = input.slotStepMinutes ?? 15;
-    const slots: TimeSlot[] = [];
+    return this.calculateByDay(input).flatMap((day) => day.slots);
+  }
+
+  calculateByDay(input: AvailabilityInput): DayAvailability[] {
+    const days: DayAvailability[] = [];
     let cursor = DateTime.fromJSDate(input.from, {
       zone: input.timezone,
     }).startOf('day');
@@ -53,47 +77,106 @@ export class AvailabilityCalculator {
     }).endOf('day');
 
     while (cursor.toMillis() <= endDay.toMillis()) {
-      const dayKey = DAY_KEYS[cursor.weekday - 1];
-      const hours: DayHours | null = input.weeklyHours[dayKey];
-      if (hours) {
-        let slotStart = parseHm(hours.start, cursor);
-        const dayEnd = parseHm(hours.end, cursor);
-
-        while (
-          slotStart.plus({ minutes: input.durationMinutes }).toMillis() <=
-          dayEnd.toMillis()
-        ) {
-          const slotEnd = slotStart.plus({ minutes: input.durationMinutes });
-          const slotStartDate = slotStart.toJSDate();
-          const slotEndDate = slotEnd.toJSDate();
-
-          if (slotStartDate >= input.from && slotEndDate <= input.to) {
-            const busy =
-              input.appointments.some(
-                (a) =>
-                  a.isActiveSlot() &&
-                  overlaps(slotStartDate, slotEndDate, a.startsAt, a.endsAt),
-              ) ||
-              input.blocks.some((b) =>
-                overlaps(slotStartDate, slotEndDate, b.startsAt, b.endsAt),
-              );
-
-            if (!busy) {
-              slots.push({
-                startsAt: slotStartDate,
-                endsAt: slotEndDate,
-              });
-            }
-          }
-
-          slotStart = slotStart.plus({ minutes: step });
-        }
-      }
-
+      days.push(this.day(cursor, input));
       cursor = cursor.plus({ days: 1 }).startOf('day');
     }
 
+    return days;
+  }
+
+  private day(cursor: DateTime, input: AvailabilityInput): DayAvailability {
+    const date = cursor.toJSDate();
+    const hours: DayHours | null =
+      input.weeklyHours[DAY_KEYS[cursor.weekday - 1]];
+    if (!hours) {
+      return {
+        date,
+        outcome: DayOutcome.CLOSED,
+        slots: [],
+        lastStartThatFits: null,
+      };
+    }
+
+    const fitting = this.fittingSlots(cursor, hours, input);
+    if (fitting.length === 0) {
+      return {
+        date,
+        outcome: DayOutcome.SERVICE_DOES_NOT_FIT,
+        slots: [],
+        lastStartThatFits: null,
+      };
+    }
+
+    const lastStartThatFits = fitting[fitting.length - 1].startsAt;
+    const notBefore =
+      input.earliestStartAt && input.earliestStartAt > input.from
+        ? input.earliestStartAt
+        : input.from;
+    const inWindow = fitting.filter(
+      (slot) => slot.startsAt >= notBefore && slot.endsAt <= input.to,
+    );
+
+    if (inWindow.length === 0) {
+      return {
+        date,
+        outcome: DayOutcome.TOO_SOON,
+        slots: [],
+        lastStartThatFits,
+      };
+    }
+
+    const slots = inWindow.filter((slot) => !this.isBusy(slot, input));
+
+    return {
+      date,
+      outcome: slots.length ? DayOutcome.AVAILABLE : DayOutcome.FULLY_BOOKED,
+      slots,
+      lastStartThatFits,
+    };
+  }
+
+  // Every start whose treatment still ends before closing, before anyone's agenda is
+  // considered. An empty result means the service simply does not fit in that day.
+  private fittingSlots(
+    cursor: DateTime,
+    hours: DayHours,
+    input: AvailabilityInput,
+  ): TimeSlot[] {
+    const step = input.slotStepMinutes ?? 15;
+    const dayEnd = parseHm(hours.end, cursor);
+    const slots: TimeSlot[] = [];
+
+    let slotStart = parseHm(hours.start, cursor);
+    while (
+      slotStart.plus({ minutes: input.durationMinutes }).toMillis() <=
+      dayEnd.toMillis()
+    ) {
+      slots.push({
+        startsAt: slotStart.toJSDate(),
+        endsAt: slotStart.plus({ minutes: input.durationMinutes }).toJSDate(),
+      });
+      slotStart = slotStart.plus({ minutes: step });
+    }
+
     return slots;
+  }
+
+  private isBusy(slot: TimeSlot, input: AvailabilityInput): boolean {
+    return (
+      input.appointments.some(
+        (appointment) =>
+          appointment.isActiveSlot() &&
+          overlaps(
+            slot.startsAt,
+            slot.endsAt,
+            appointment.startsAt,
+            appointment.endsAt,
+          ),
+      ) ||
+      input.blocks.some((block) =>
+        overlaps(slot.startsAt, slot.endsAt, block.startsAt, block.endsAt),
+      )
+    );
   }
 
   isSlotAvailable(input: {

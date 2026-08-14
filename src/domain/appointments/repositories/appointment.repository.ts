@@ -1,12 +1,17 @@
+import { Currency } from '@domain/common/value-objects/currency.vo';
 import { Appointment, AppointmentStatus } from '../entities/appointment.entity';
 
 export interface CreateAppointmentData {
+  branchId: string;
   clientId: string;
   professionalId: string;
   serviceId: string;
   startsAt: Date;
   endsAt: Date;
   status: AppointmentStatus;
+  price: string;
+  currency: Currency;
+  depositAmount?: string | null;
 }
 
 // Write side, plus the reads that feed business rules. Listings that go to a screen or
@@ -26,6 +31,8 @@ export interface AppointmentRepository {
     from: Date;
     to: Date;
   }): Promise<Appointment[]>;
+  // Sets branch_id and price/currency/deposit snapshots from the linked service.
+  backfillBranchAndPriceSnapshots(branchId: string): Promise<number>;
   deleteAllUnscoped(): Promise<void>;
 }
 

@@ -23,7 +23,6 @@ export class DrizzleTenantRepository implements TenantRepository {
         .values({
           name: data.name,
           timezone: data.timezone ?? 'America/La_Paz',
-          plan: data.plan,
           status: data.status,
         })
         .returning();

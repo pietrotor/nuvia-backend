@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { ErrorCode, ValidationError } from '@domain/common/exceptions';
 import { ProfessionalNotFoundError } from '@domain/professionals/exceptions/professional.exceptions';
@@ -23,6 +24,7 @@ export class CreateScheduleBlockUseCase {
     @Inject(PROFESSIONAL_REPOSITORY)
     private readonly professionalRepository: ProfessionalRepository,
     private readonly audit: AuditRecorder,
+    private readonly agendaEvents: AgendaEventPublisher,
   ) {}
 
   async execute(dto: CreateScheduleBlockDto): Promise<ScheduleBlock> {
@@ -54,6 +56,8 @@ export class CreateScheduleBlockUseCase {
       entityId: created.id,
       after: dto,
     });
+
+    await this.agendaEvents.changed();
 
     return created;
   }

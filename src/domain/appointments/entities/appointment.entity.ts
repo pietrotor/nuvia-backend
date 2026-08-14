@@ -1,3 +1,5 @@
+import { Money } from '@domain/common/value-objects/money.vo';
+
 import { InvalidAppointmentTransitionError } from '../exceptions/appointment.exceptions';
 
 export enum AppointmentStatus {
@@ -21,12 +23,16 @@ type AppointmentChange = AppointmentStatus | 'reschedule';
 export interface AppointmentProps {
   id: string;
   tenantId: string;
+  branchId: string;
   clientId: string;
   professionalId: string;
   serviceId: string;
   startsAt: Date;
   endsAt: Date;
   status: AppointmentStatus;
+  // Snapshot at booking time: branch price overrides make a live join unsafe.
+  price: Money;
+  depositAmount?: Money | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -34,24 +40,30 @@ export interface AppointmentProps {
 export class Appointment {
   public readonly id: string;
   public readonly tenantId: string;
+  public readonly branchId: string;
   public readonly clientId: string;
   public readonly professionalId: string;
   public readonly serviceId: string;
   public readonly startsAt: Date;
   public readonly endsAt: Date;
   public readonly status: AppointmentStatus;
+  public readonly price: Money;
+  public readonly depositAmount: Money | null;
   public readonly createdAt?: Date;
   public readonly updatedAt?: Date;
 
   constructor(props: AppointmentProps) {
     this.id = props.id;
     this.tenantId = props.tenantId;
+    this.branchId = props.branchId;
     this.clientId = props.clientId;
     this.professionalId = props.professionalId;
     this.serviceId = props.serviceId;
     this.startsAt = props.startsAt;
     this.endsAt = props.endsAt;
     this.status = props.status;
+    this.price = props.price;
+    this.depositAmount = props.depositAmount ?? null;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }
@@ -67,14 +79,25 @@ export class Appointment {
   rescheduleTo(
     startsAt: Date,
     endsAt: Date,
-    professionalId?: string,
+    changes?: {
+      professionalId?: string;
+      branchId?: string;
+      price?: Money;
+      depositAmount?: Money | null;
+    },
   ): Appointment {
     this.assertActive('reschedule');
     return new Appointment({
       ...this,
       startsAt,
       endsAt,
-      professionalId: professionalId ?? this.professionalId,
+      professionalId: changes?.professionalId ?? this.professionalId,
+      branchId: changes?.branchId ?? this.branchId,
+      price: changes?.price ?? this.price,
+      depositAmount:
+        changes?.depositAmount !== undefined
+          ? changes.depositAmount
+          : this.depositAmount,
     });
   }
 

@@ -20,7 +20,6 @@ import {
   EmojiPolicy,
 } from '@domain/business-config/entities/business-config.entity';
 import { Currency } from '@domain/common/value-objects/currency.vo';
-import { WeeklyHoursDto } from '@application/common/dto/weekly-hours.dto';
 
 export class BookingPolicyDto {
   @ApiProperty({ example: 2 })
@@ -105,12 +104,6 @@ export class UpdateBusinessConfigDto {
   @IsEnum(Currency)
   currency?: Currency;
 
-  @ApiProperty({ example: 'Av. Heroínas 123', required: false, nullable: true })
-  @IsOptional()
-  @IsString()
-  @MaxLength(1000)
-  address?: string | null;
-
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()
   @IsUrl({ require_tld: false })
@@ -120,12 +113,6 @@ export class UpdateBusinessConfigDto {
   @IsOptional()
   @Matches(/^\+[1-9]\d{7,14}$/)
   whatsappPhone?: string | null;
-
-  @ApiProperty({ type: WeeklyHoursDto, required: false })
-  @IsOptional()
-  @ValidateNested()
-  @Type(() => WeeklyHoursDto)
-  businessHours?: WeeklyHoursDto;
 
   @ApiProperty({ type: BookingPolicyDto, required: false })
   @IsOptional()
@@ -143,9 +130,4 @@ export class UpdateBusinessConfigDto {
   @IsOptional()
   @IsObject()
   faq?: Record<string, string>;
-
-  @ApiProperty({ required: false, nullable: true })
-  @IsOptional()
-  @IsUrl({ require_tld: false })
-  staticDepositQrUrl?: string | null;
 }

@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 
 import { ForbiddenError, UnauthorizedError } from '@domain/common/exceptions';
 import { User } from '@domain/users/entities/user.entity';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Role } from '@domain/users/value-objects/role.vo';
 import { RoleGuard } from './role.guard';
 
@@ -24,39 +25,58 @@ const contextWith = (user?: User): ExecutionContext =>
   }) as unknown as ExecutionContext;
 
 describe('RoleGuard', () => {
-  const guardFor = (allowedRoles?: Role[]) => {
-    const reflector = { get: () => allowedRoles } as unknown as Reflector;
+  const guardFor = (allowedPermissions?: Permission[]) => {
+    const reflector = {
+      get: () => allowedPermissions,
+    } as unknown as Reflector;
 
     return new RoleGuard(reflector);
   };
 
-  it('lets the listed roles through', () => {
+  it('lets a role with the listed permission through', () => {
     expect(
-      guardFor([Role.OWNER]).canActivate(contextWith(userWith(Role.OWNER))),
+      guardFor([Permission.BUSINESS_CONFIG_WRITE]).canActivate(
+        contextWith(userWith(Role.OWNER)),
+      ),
     ).toBe(true);
   });
 
-  it('rejects a role that is not listed', () => {
+  it('rejects a role that lacks every listed permission', () => {
     expect(() =>
-      guardFor([Role.OWNER]).canActivate(contextWith(userWith(Role.STAFF))),
+      guardFor([Permission.BUSINESS_CONFIG_WRITE]).canActivate(
+        contextWith(userWith(Role.STAFF)),
+      ),
     ).toThrow(ForbiddenError);
   });
 
-  it('does not let superadmin inherit tenant roles', () => {
+  it('uses OR semantics across listed permissions', () => {
+    expect(
+      guardFor([Permission.TENANT_READ, Permission.TENANTS_ADMIN]).canActivate(
+        contextWith(userWith(Role.SUPERADMIN)),
+      ),
+    ).toBe(true);
+    expect(
+      guardFor([Permission.TENANT_READ, Permission.TENANTS_ADMIN]).canActivate(
+        contextWith(userWith(Role.STAFF)),
+      ),
+    ).toBe(true);
+  });
+
+  it('does not let superadmin inherit tenant permissions', () => {
     expect(() =>
-      guardFor([Role.OWNER]).canActivate(
+      guardFor([Permission.BUSINESS_CONFIG_WRITE]).canActivate(
         contextWith(userWith(Role.SUPERADMIN)),
       ),
     ).toThrow(ForbiddenError);
   });
 
   it('rejects a request with no authenticated user', () => {
-    expect(() => guardFor([Role.OWNER]).canActivate(contextWith())).toThrow(
-      UnauthorizedError,
-    );
+    expect(() =>
+      guardFor([Permission.APPOINTMENTS_READ]).canActivate(contextWith()),
+    ).toThrow(UnauthorizedError);
   });
 
-  it('leaves the route open when no role was declared', () => {
+  it('leaves the route open when no permission was declared', () => {
     expect(guardFor(undefined).canActivate(contextWith())).toBe(true);
   });
 });

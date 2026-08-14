@@ -1,4 +1,6 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
+import { BranchResolver } from '@application/branches/services/branch-resolver.service';
 import {
   Appointment,
   AppointmentStatus,
@@ -8,6 +10,11 @@ import {
   SlotUnavailableError,
 } from '@domain/appointments/exceptions/appointment.exceptions';
 import { AppointmentRepository } from '@domain/appointments/repositories/appointment.repository';
+import { Branch } from '@domain/branches/entities/branch.entity';
+import { BranchProfessional } from '@domain/branches/entities/branch-professional.entity';
+import { BranchService } from '@domain/branches/entities/branch-service.entity';
+import { BranchProfessionalRepository } from '@domain/branches/repositories/branch-professional.repository';
+import { BranchServiceRepository } from '@domain/branches/repositories/branch-service.repository';
 import {
   AgentTone,
   BusinessConfig,
@@ -26,6 +33,8 @@ import { TenantStatus } from '@domain/tenants/value-objects/tenant-status.vo';
 import { AppointmentSlotValidator } from '../services/appointment-slot-validator.service';
 import { ScheduleContextResolver } from '../services/schedule-context-resolver.service';
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { Money } from '@domain/common/value-objects/money.vo';
+import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
 import { RescheduleAppointmentUseCase } from './reschedule-appointment.use-case';
 
 const hours: WeeklyHours = {
@@ -38,6 +47,20 @@ const hours: WeeklyHours = {
   sun: null,
 };
 
+const branch = new Branch({
+  id: 'b1',
+  tenantId: 't1',
+  name: 'Centro',
+  slug: 'centro',
+  address: null,
+  mapsUrl: null,
+  phone: null,
+  weeklyHours: hours,
+  timezone: null,
+  isPrimary: true,
+  isActive: true,
+});
+
 const service = (requiresDeposit: boolean): Service =>
   new Service({
     id: 's1',
@@ -49,6 +72,8 @@ const service = (requiresDeposit: boolean): Service =>
     requiresDeposit,
     depositAmount: requiresDeposit ? '50.00' : null,
     depositPercent: null,
+    depositQrId: null,
+    clientChoosesProfessional: true,
     isActive: true,
     professionalIds: ['p1'],
   });
@@ -62,12 +87,14 @@ const appointment = (
   new Appointment({
     id,
     tenantId: 't1',
+    branchId: branch.id,
     clientId: 'c1',
     professionalId: 'p1',
     serviceId: 's1',
     startsAt: new Date(startsAt),
     endsAt: new Date(Date.parse(startsAt) + 3_600_000),
     status,
+    price: Money.of('150.00', Currency.BOB),
   });
 
 describe('RescheduleAppointmentUseCase', () => {
@@ -107,7 +134,6 @@ describe('RescheduleAppointmentUseCase', () => {
           id: 'p1',
           tenantId: 't1',
           name: 'Camila',
-          weeklyHours: hours,
           isActive: true,
         }),
       ),
@@ -123,7 +149,6 @@ describe('RescheduleAppointmentUseCase', () => {
           agentName: 'Vale',
           tone: AgentTone.WARM,
           currency: Currency.BOB,
-          businessHours: hours,
           bookingPolicy: {
             minLeadTimeHours: 2,
             cancelRescheduleHours: 24,
@@ -146,13 +171,43 @@ describe('RescheduleAppointmentUseCase', () => {
     const clock: ClockPort = {
       now: () => new Date('2026-08-02T00:00:00.000Z'),
     };
+    const branchResolver = {
+      resolve: jest.fn().mockResolvedValue(branch),
+    };
+    const branchServiceRepository = {
+      findByBranchAndService: jest.fn().mockResolvedValue(
+        new BranchService({
+          tenantId: 't1',
+          branchId: branch.id,
+          serviceId: 's1',
+          priceOverrideAmount: null,
+          depositAmountOverrideAmount: null,
+          depositQrId: null,
+          isActive: true,
+        }),
+      ),
+    };
+    const branchProfessionalRepository = {
+      findByBranchAndProfessional: jest.fn().mockResolvedValue(
+        new BranchProfessional({
+          tenantId: 't1',
+          branchId: branch.id,
+          professionalId: 'p1',
+          weeklyHours: hours,
+          isActive: true,
+        }),
+      ),
+    };
 
     useCase = new RescheduleAppointmentUseCase(
       appointmentRepository as unknown as AppointmentRepository,
       new AppointmentSlotValidator(
         new ScheduleContextResolver(
+          branchResolver as unknown as BranchResolver,
           professionalRepository as unknown as ProfessionalRepository,
           serviceRepository as unknown as ServiceRepository,
+          branchServiceRepository as unknown as BranchServiceRepository,
+          branchProfessionalRepository as unknown as BranchProfessionalRepository,
           businessConfigRepository as unknown as BusinessConfigRepository,
           tenantRepository as unknown as TenantRepository,
           clock,
@@ -162,6 +217,7 @@ describe('RescheduleAppointmentUseCase', () => {
       ),
       clock,
       audit as unknown as AuditRecorder,
+      { changed: jest.fn() } as unknown as AgendaEventPublisher,
     );
   });
 
@@ -170,6 +226,7 @@ describe('RescheduleAppointmentUseCase', () => {
 
     expect(result.appointment.startsAt.toISOString()).toBe(newStartsAt);
     expect(result.appointment.status).toBe(AppointmentStatus.CONFIRMED);
+    expect(result.depositRequiresReview).toBe(false);
     expect(appointmentRepository.save).toHaveBeenCalled();
   });
 
@@ -211,8 +268,51 @@ describe('RescheduleAppointmentUseCase', () => {
 
   it("does not touch another client's appointments", async () => {
     await expect(
-      useCase.execute('a1', { startsAt: newStartsAt }, 'otra-clienta'),
+      useCase.execute(
+        'a1',
+        { startsAt: newStartsAt },
+        { restrictToClientId: 'otra-clienta' },
+      ),
     ).rejects.toThrow();
     expect(appointmentRepository.save).not.toHaveBeenCalled();
+  });
+
+  it('keeps a custom length when staff moves the appointment without an override', async () => {
+    appointmentRepository.findById.mockResolvedValue(
+      new Appointment({
+        id: 'a1',
+        tenantId: 't1',
+        branchId: branch.id,
+        clientId: 'c1',
+        professionalId: 'p1',
+        serviceId: 's1',
+        startsAt: new Date('2026-08-02T15:00:00.000Z'),
+        endsAt: new Date('2026-08-02T15:45:00.000Z'),
+        status: AppointmentStatus.CONFIRMED,
+        price: Money.of('150.00', Currency.BOB),
+      }),
+    );
+
+    const result = await useCase.execute(
+      'a1',
+      { startsAt: newStartsAt },
+      { actor: BookingActor.STAFF },
+    );
+
+    expect(result.appointment.endsAt.toISOString()).toBe(
+      '2026-08-05T15:45:00.000Z',
+    );
+  });
+
+  it('lets staff stretch the appointment on reschedule', async () => {
+    const result = await useCase.execute(
+      'a1',
+      { startsAt: newStartsAt, durationMinutes: 90 },
+      { actor: BookingActor.STAFF },
+    );
+
+    expect(result.appointment.endsAt.toISOString()).toBe(
+      '2026-08-05T16:30:00.000Z',
+    );
   });
 });

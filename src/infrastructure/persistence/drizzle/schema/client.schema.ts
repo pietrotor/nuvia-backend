@@ -3,6 +3,7 @@ import {
   uuid,
   varchar,
   text,
+  date,
   timestamp,
   index,
   uniqueIndex,
@@ -19,6 +20,11 @@ export const clients = pgTable(
       .references(() => tenants.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
     phoneE164: varchar('phone_e164', { length: 20 }).notNull(),
+    email: varchar('email', { length: 320 }),
+    birthDate: date('birth_date'),
+    identificationType: varchar('identification_type', { length: 50 }),
+    identificationNumber: varchar('identification_number', { length: 100 }),
+    address: text('address'),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

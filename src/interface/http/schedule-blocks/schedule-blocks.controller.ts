@@ -23,7 +23,7 @@ import { UpdateScheduleBlockDto } from '@application/schedule-blocks/dto/update-
 import { CreateScheduleBlockUseCase } from '@application/schedule-blocks/use-cases/create-schedule-block.use-case';
 import { ListScheduleBlocksUseCase } from '@application/schedule-blocks/use-cases/list-schedule-blocks.use-case';
 import { UpdateScheduleBlockUseCase } from '@application/schedule-blocks/use-cases/update-schedule-block.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 import { ScheduleBlockResponseDto } from './dto/schedule-block-response.dto';
 import { ScheduleBlockViewResponseDto } from './dto/schedule-block-view-response.dto';
@@ -39,7 +39,7 @@ export class ScheduleBlocksController {
   ) {}
 
   @Get()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.SCHEDULE_BLOCKS_READ)
   @ApiOperation({
     summary: 'Lists active schedule blocks, with the affected professional',
   })
@@ -53,7 +53,7 @@ export class ScheduleBlocksController {
   }
 
   @Post()
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.SCHEDULE_BLOCKS_WRITE)
   @HttpCode(HttpStatus.CREATED)
   @ApiOperation({ summary: 'Blocks a time range in the schedule' })
   @ApiResponse({ status: 201, type: ScheduleBlockResponseDto })
@@ -66,7 +66,7 @@ export class ScheduleBlocksController {
   }
 
   @Patch(':id')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.SCHEDULE_BLOCKS_WRITE)
   @ApiOperation({ summary: 'Updates or deactivates a schedule block' })
   @ApiResponse({ status: 200, type: ScheduleBlockResponseDto })
   async update(

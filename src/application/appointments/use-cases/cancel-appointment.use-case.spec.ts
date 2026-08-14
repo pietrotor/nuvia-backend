@@ -1,4 +1,5 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { AgendaEventPublisher } from '@application/realtime/services/agenda-event.publisher';
 import {
   Appointment,
   AppointmentStatus,
@@ -11,24 +12,14 @@ import { AppointmentRepository } from '@domain/appointments/repositories/appoint
 import {
   AgentTone,
   BusinessConfig,
-  WeeklyHours,
 } from '@domain/business-config/entities/business-config.entity';
 import { BusinessConfigRepository } from '@domain/business-config/repositories/business-config.repository';
 import { ClockPort } from '@domain/common/ports/clock.port';
 import { Service } from '@domain/services/entities/service.entity';
 import { ServiceRepository } from '@domain/services/repositories/service.repository';
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { Money } from '@domain/common/value-objects/money.vo';
 import { CancelAppointmentUseCase } from './cancel-appointment.use-case';
-
-const hours: WeeklyHours = {
-  mon: { start: '09:00', end: '18:00' },
-  tue: { start: '09:00', end: '18:00' },
-  wed: { start: '09:00', end: '18:00' },
-  thu: { start: '09:00', end: '18:00' },
-  fri: { start: '09:00', end: '18:00' },
-  sat: null,
-  sun: null,
-};
 
 const service = (requiresDeposit: boolean): Service =>
   new Service({
@@ -41,6 +32,8 @@ const service = (requiresDeposit: boolean): Service =>
     requiresDeposit,
     depositAmount: requiresDeposit ? '100.00' : null,
     depositPercent: null,
+    depositQrId: null,
+    clientChoosesProfessional: true,
     isActive: true,
     professionalIds: ['p1'],
   });
@@ -52,12 +45,14 @@ const appointment = (
   new Appointment({
     id: 'a1',
     tenantId: 't1',
+    branchId: 'b1',
     clientId: 'c1',
     professionalId: 'p1',
     serviceId: 's1',
     startsAt: new Date(startsAt),
     endsAt: new Date(Date.parse(startsAt) + 3_600_000),
     status,
+    price: Money.of('150.00', Currency.BOB),
   });
 
 describe('CancelAppointmentUseCase', () => {
@@ -91,7 +86,6 @@ describe('CancelAppointmentUseCase', () => {
           agentName: 'Vale',
           tone: AgentTone.WARM,
           currency: Currency.BOB,
-          businessHours: hours,
           bookingPolicy: {
             minLeadTimeHours: 2,
             cancelRescheduleHours: 24,
@@ -111,6 +105,7 @@ describe('CancelAppointmentUseCase', () => {
       businessConfigRepository as unknown as BusinessConfigRepository,
       clock,
       audit as unknown as AuditRecorder,
+      { changed: jest.fn() } as unknown as AgendaEventPublisher,
     );
   });
 

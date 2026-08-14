@@ -1,68 +1,44 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 
-import {
-  APPOINTMENT_REPOSITORY,
-  AppointmentRepository,
-} from '@domain/appointments/repositories/appointment.repository';
-import {
-  AvailabilityCalculator,
-  TimeSlot,
-} from '@domain/appointments/services/availability-calculator';
-import {
-  SCHEDULE_BLOCK_REPOSITORY,
-  ScheduleBlockRepository,
-} from '@domain/schedule-blocks/repositories/schedule-block.repository';
+import { TimeSlot } from '@domain/appointments/services/availability-calculator';
+import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
 import { GetAvailabilityDto } from '../dto/get-availability.dto';
-import { ScheduleContextResolver } from '../services/schedule-context-resolver.service';
+import { resolveAppointmentDuration } from '../services/resolve-appointment-duration';
+import { FindAvailabilityOptionsUseCase } from './find-availability-options.use-case';
 
+// The flat list the panel and the public page consume. The reasoning lives one level
+// down, so there is a single path that decides what is bookable.
 @Injectable()
 export class GetAvailabilityUseCase {
-  private readonly availability = new AvailabilityCalculator();
+  constructor(private readonly findOptions: FindAvailabilityOptionsUseCase) {}
 
-  constructor(
-    private readonly scheduleContext: ScheduleContextResolver,
-    @Inject(APPOINTMENT_REPOSITORY)
-    private readonly appointmentRepository: AppointmentRepository,
-    @Inject(SCHEDULE_BLOCK_REPOSITORY)
-    private readonly scheduleBlockRepository: ScheduleBlockRepository,
-  ) {}
-
-  async execute(dto: GetAvailabilityDto): Promise<TimeSlot[]> {
-    const context = await this.scheduleContext.resolve({
-      serviceId: dto.serviceId,
-      professionalId: dto.professionalId,
-    });
-
-    // Nothing is ever offered before the minimum lead time, even if requested.
-    const requestedFrom = new Date(dto.from);
+  async execute(
+    dto: GetAvailabilityDto,
+    actor: BookingActor = BookingActor.CLIENT,
+  ): Promise<TimeSlot[]> {
+    const from = new Date(dto.from);
     const to = new Date(dto.to);
-    const from =
-      requestedFrom > context.earliestStartAt
-        ? requestedFrom
-        : context.earliestStartAt;
     if (to <= from) return [];
 
-    const [appointments, blocks] = await Promise.all([
-      this.appointmentRepository.findByProfessionalInRange({
-        professionalId: context.professional.id,
-        from,
-        to,
-      }),
-      this.scheduleBlockRepository.findInRange(
-        from,
-        to,
-        context.professional.id,
-      ),
-    ]);
-
-    return this.availability.calculate({
-      weeklyHours: context.weeklyHours,
-      durationMinutes: context.service.durationMinutes,
+    const { service, slots } = await this.findOptions.execute({
+      serviceId: dto.serviceId,
+      professionalId: dto.professionalId,
+      branchId: dto.branchId,
       from,
       to,
-      appointments,
-      blocks,
-      timezone: context.timezone,
+      actor,
+      durationMinutes: dto.durationMinutes,
     });
+
+    const durationMinutes = resolveAppointmentDuration({
+      serviceDurationMinutes: service.durationMinutes,
+      actor,
+      durationMinutes: dto.durationMinutes,
+    });
+
+    return slots.map((slot) => ({
+      startsAt: slot.startsAt,
+      endsAt: new Date(slot.startsAt.getTime() + durationMinutes * 60_000),
+    }));
   }
 }

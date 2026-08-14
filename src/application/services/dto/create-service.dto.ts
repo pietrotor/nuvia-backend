@@ -63,6 +63,26 @@ export class CreateServiceDto {
   @Max(100)
   depositPercent?: number | null;
 
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description:
+      'QR to charge the deposit with. Omit it to use the default of the business',
+  })
+  @IsOptional()
+  @IsUUID()
+  depositQrId?: string | null;
+
+  @ApiProperty({
+    default: true,
+    required: false,
+    description:
+      'Whether the agent offers the client a professional to pick for this service',
+  })
+  @IsOptional()
+  @IsBoolean()
+  clientChoosesProfessional?: boolean;
+
   @ApiProperty({ type: [String] })
   @IsArray()
   @ArrayMinSize(1)

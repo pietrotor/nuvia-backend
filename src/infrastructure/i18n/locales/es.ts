@@ -20,6 +20,7 @@ export const es: Record<ErrorCode, string> = {
     'Un superadmin no puede pertenecer a un negocio.',
 
   [ErrorCode.VALIDATION_FAILED]: 'Revisá los datos enviados.',
+  [ErrorCode.PAYLOAD_TOO_LARGE]: 'El archivo que enviaste es demasiado grande.',
   [ErrorCode.DUPLICATE_RECORD]: 'Ese registro ya existe.',
   [ErrorCode.RELATED_RECORD_NOT_FOUND]:
     'No se puede completar la operación: falta un registro relacionado.',
@@ -37,6 +38,10 @@ export const es: Record<ErrorCode, string> = {
     'El negocio todavía no vinculó su WhatsApp.',
   [ErrorCode.WHATSAPP_SESSION_ALREADY_CONNECTED]:
     'El WhatsApp ya está vinculado. No hace falta escanear otro código.',
+  [ErrorCode.STORAGE_NOT_CONFIGURED]:
+    'El almacenamiento de archivos todavía no está configurado.',
+  [ErrorCode.STORAGE_OBJECT_NOT_FOUND]:
+    'No encontramos ese archivo. Volvé a subirlo.',
   [ErrorCode.LLM_NOT_CONFIGURED]:
     'El proveedor de IA todavía no está configurado.',
   [ErrorCode.LLM_PROVIDER_ERROR]:
@@ -50,8 +55,26 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.CONVERSATION_NOT_FOUND]: 'No encontramos esa conversación.',
   [ErrorCode.PROFESSIONAL_NOT_FOUND]: 'No encontramos esa profesional.',
   [ErrorCode.SERVICE_NOT_FOUND]: 'No encontramos ese servicio.',
+  [ErrorCode.BRANCH_NOT_FOUND]: 'No encontramos esa sucursal.',
+  [ErrorCode.BRANCH_REQUIRED]:
+    'Elegí una sucursal para continuar con la reserva.',
+  [ErrorCode.SERVICE_NOT_OFFERED_AT_BRANCH]:
+    'Ese servicio no se ofrece en la sucursal elegida.',
+  [ErrorCode.PROFESSIONAL_NOT_AT_BRANCH]:
+    'Esa profesional no atiende en la sucursal elegida.',
   [ErrorCode.CLIENT_NOT_FOUND]: 'No encontramos esa clienta.',
+  [ErrorCode.CLIENT_PHONE_ALREADY_REGISTERED]:
+    'Ya existe una clienta con el teléfono {phoneE164}.',
   [ErrorCode.BUSINESS_CONFIG_NOT_FOUND]: 'Falta la configuración del negocio.',
+  [ErrorCode.DEPOSIT_QR_NOT_FOUND]: 'No encontramos ese QR de cobro.',
+  [ErrorCode.INVALID_DEPOSIT_QR_FILE]:
+    'Subí una imagen PNG, JPG o WEBP de hasta {maxSizeMb} MB.',
+  [ErrorCode.DEPOSIT_QR_REQUIRES_DEPOSIT_SERVICE]:
+    'Solo podés asignar un QR a un servicio que cobra seña.',
+  [ErrorCode.PROFESSIONAL_AVATAR_NOT_FOUND]:
+    'Esa profesional todavía no tiene foto.',
+  [ErrorCode.INVALID_PROFESSIONAL_AVATAR_FILE]:
+    'Subí una imagen PNG, JPG o WEBP de hasta {maxSizeMb} MB.',
   [ErrorCode.SCHEDULE_BLOCK_NOT_FOUND]: 'No encontramos ese bloqueo de agenda.',
   [ErrorCode.INVALID_WEEKLY_HOURS]:
     'Los horarios deben tener formato HH:mm y terminar después de comenzar.',
@@ -62,5 +85,20 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.INVALID_TIME_RANGE]:
     'La hora de finalización debe ser posterior a la hora de inicio.',
   [ErrorCode.INVALID_WEBHOOK]: 'Webhook inválido.',
+  [ErrorCode.PLAN_NOT_FOUND]: 'No encontramos ese plan.',
+  [ErrorCode.PLAN_CODE_ALREADY_EXISTS]:
+    'Ya existe un plan con el código {code}.',
+  [ErrorCode.PLAN_CONFIG_INVALID]:
+    'La configuración del plan no es válida ({path}).',
+  [ErrorCode.PLAN_LIMIT_REACHED]:
+    'Tu plan permite hasta {limit} {resource}. Escribinos para ampliarlo.',
+  [ErrorCode.PLAN_FEATURE_NOT_AVAILABLE]:
+    'Tu plan no incluye {feature}. Escribinos para ampliarlo.',
+  [ErrorCode.SUBSCRIPTION_NOT_FOUND]:
+    'Este negocio todavía no tiene una suscripción activa.',
+  [ErrorCode.SUBSCRIPTION_ALREADY_EXISTS]:
+    'Este negocio ya tiene una suscripción vigente.',
+  [ErrorCode.SUBSCRIPTION_INVALID_PERIOD]:
+    'El período de la suscripción no es válido.',
   [ErrorCode.INTERNAL_ERROR]: 'Ocurrió un error interno. Intentá de nuevo.',
 };

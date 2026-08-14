@@ -16,6 +16,7 @@ import {
   UpdateServiceData,
 } from '@domain/services/repositories/service.repository';
 import { UpdateServiceDto } from '../dto/update-service.dto';
+import { DepositQrAssignmentValidator } from '../services/deposit-qr-assignment-validator.service';
 
 @Injectable()
 export class UpdateServiceUseCase {
@@ -24,6 +25,7 @@ export class UpdateServiceUseCase {
     private readonly serviceRepository: ServiceRepository,
     @Inject(PROFESSIONAL_REPOSITORY)
     private readonly professionalRepository: ProfessionalRepository,
+    private readonly depositQrAssignment: DepositQrAssignmentValidator,
     private readonly audit: AuditRecorder,
   ) {}
 
@@ -34,6 +36,11 @@ export class UpdateServiceUseCase {
     if (dto.professionalIds) {
       await this.assertProfessionalsExist(dto.professionalIds);
     }
+
+    await this.depositQrAssignment.assertAssignable({
+      depositQrId: dto.depositQrId,
+      requiresDeposit: dto.requiresDeposit ?? current.requiresDeposit,
+    });
 
     const data = this.normalize(dto);
     assertValidDepositConfiguration({
@@ -63,14 +70,17 @@ export class UpdateServiceUseCase {
   }
 
   private normalize(dto: UpdateServiceDto): UpdateServiceData {
-    const data: UpdateServiceData = {
-      ...dto,
-      name: dto.name?.trim(),
-    };
+    const data: UpdateServiceData = { ...dto };
+    // Only what the patch actually carries: an invented `name: undefined` turns a patch
+    // that just moves the professionals into an update of no columns at all.
+    if (dto.name !== undefined) data.name = dto.name.trim();
 
     if (dto.requiresDeposit === false) {
       data.depositAmount = null;
       data.depositPercent = null;
+      // A service that stopped charging a deposit cannot keep pointing at a QR: the
+      // database rejects that combination.
+      data.depositQrId = null;
     } else if (dto.depositAmount) {
       data.depositPercent = null;
     } else if (dto.depositPercent) {

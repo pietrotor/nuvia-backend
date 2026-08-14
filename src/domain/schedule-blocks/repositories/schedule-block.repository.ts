@@ -1,6 +1,7 @@
 import { ScheduleBlock } from '../entities/schedule-block.entity';
 
 export interface CreateScheduleBlockData {
+  branchId?: string | null;
   professionalId?: string | null;
   startsAt: Date;
   endsAt: Date;
@@ -8,6 +9,7 @@ export interface CreateScheduleBlockData {
 }
 
 export interface UpdateScheduleBlockData {
+  branchId?: string | null;
   professionalId?: string | null;
   startsAt?: Date;
   endsAt?: Date;
@@ -22,16 +24,19 @@ export interface ScheduleBlockRepository {
     professionalId: string | null;
     startsAt: Date;
     endsAt: Date;
+    branchId?: string;
   }): Promise<ScheduleBlock[]>;
-  findInRange(
-    from: Date,
-    to: Date,
-    professionalId?: string,
-  ): Promise<ScheduleBlock[]>;
+  findInRange(input: {
+    from: Date;
+    to: Date;
+    professionalId?: string;
+    branchId?: string;
+  }): Promise<ScheduleBlock[]>;
   update(
     id: string,
     data: UpdateScheduleBlockData,
   ): Promise<ScheduleBlock | null>;
+  assignBranchToAllWithoutBranch(branchId: string): Promise<number>;
   deleteAllUnscoped(): Promise<void>;
 }
 

@@ -100,6 +100,16 @@ export class DomainExceptionFilter implements ExceptionFilter {
         ? (payload as { message?: string | string[] }).message
         : payload;
 
+    // Multer rejects an oversized upload before any handler runs, and its message is
+    // in English: the client gets the catalog text like with any other error.
+    if (statusCode === HttpStatus.PAYLOAD_TOO_LARGE) {
+      return {
+        statusCode,
+        code: ErrorCode.PAYLOAD_TOO_LARGE,
+        message: this.i18n.translate(ErrorCode.PAYLOAD_TOO_LARGE),
+      };
+    }
+
     if (statusCode === HttpStatus.BAD_REQUEST && Array.isArray(messages)) {
       return {
         statusCode,

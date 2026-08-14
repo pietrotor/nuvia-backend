@@ -9,6 +9,8 @@ export interface CreateServiceData {
   requiresDeposit?: boolean;
   depositAmount?: string | null;
   depositPercent?: number | null;
+  depositQrId?: string | null;
+  clientChoosesProfessional?: boolean;
   professionalIds: string[];
   isActive?: boolean;
 }
@@ -21,6 +23,8 @@ export interface UpdateServiceData {
   requiresDeposit?: boolean;
   depositAmount?: string | null;
   depositPercent?: number | null;
+  depositQrId?: string | null;
+  clientChoosesProfessional?: boolean;
   professionalIds?: string[];
   isActive?: boolean;
 }

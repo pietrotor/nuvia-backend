@@ -17,7 +17,7 @@ import { CreateTenantUseCase } from '@application/tenants/use-cases/create-tenan
 import { ListTenantsUseCase } from '@application/tenants/use-cases/list-tenants.use-case';
 import { GetTenantUseCase } from '@application/tenants/use-cases/get-tenant.use-case';
 import { UpdateTenantUseCase } from '@application/tenants/use-cases/update-tenant.use-case';
-import { Role } from '@domain/users/value-objects/role.vo';
+import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth, CurrentTenant } from '../common/decorators';
 import { BusinessConfigResponseDto } from '../business-config/dto/business-config-response.dto';
 import { UserResponseDto } from '../users/dto/user-response.dto';
@@ -35,7 +35,7 @@ export class TenantsController {
   ) {}
 
   @Get('me')
-  @Auth(Role.OWNER, Role.STAFF)
+  @Auth(Permission.TENANT_READ)
   @ApiOperation({ summary: 'Returns the business of the token' })
   async findMine(
     @CurrentTenant() tenantId: string,
@@ -44,7 +44,7 @@ export class TenantsController {
   }
 
   @Patch('me')
-  @Auth(Role.OWNER)
+  @Auth(Permission.TENANT_WRITE)
   @ApiOperation({
     summary: 'Updates the configuration of the business of the token',
   })
@@ -58,7 +58,7 @@ export class TenantsController {
   }
 
   @Post()
-  @Auth(Role.SUPERADMIN)
+  @Auth(Permission.TENANTS_ADMIN)
   @ApiOperation({ summary: 'Creates a business and its owner (support only)' })
   async create(
     @Body() dto: CreateTenantDto,
@@ -72,7 +72,7 @@ export class TenantsController {
   }
 
   @Get()
-  @Auth(Role.SUPERADMIN)
+  @Auth(Permission.TENANTS_ADMIN)
   @ApiOperation({ summary: 'Lists all the businesses (support only)' })
   async findAll(): Promise<TenantResponseDto[]> {
     const tenants = await this.listTenants.execute();
@@ -81,7 +81,7 @@ export class TenantsController {
   }
 
   @Patch(':tenantId/business-category')
-  @Auth(Role.SUPERADMIN)
+  @Auth(Permission.TENANTS_ADMIN)
   @ApiOperation({
     summary: 'Changes the trade the agent of a business is set up for',
   })

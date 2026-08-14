@@ -5,7 +5,6 @@ import {
   AgentPolicy,
   BookingPolicy,
   BusinessConfig,
-  WeeklyHours,
 } from '@domain/business-config/entities/business-config.entity';
 import { BusinessCategory } from '@domain/business-config/value-objects/business-category.vo';
 import { CurrencyResponseDto } from '@interface/http/common/dto/money-response.dto';
@@ -33,16 +32,10 @@ export class BusinessConfigResponseDto {
   currency: CurrencyResponseDto;
 
   @ApiProperty({ nullable: true })
-  address: string | null;
-
-  @ApiProperty({ nullable: true })
   logoUrl: string | null;
 
   @ApiProperty({ nullable: true })
   whatsappPhone: string | null;
-
-  @ApiProperty({ type: Object })
-  businessHours: WeeklyHours;
 
   @ApiProperty({ type: Object })
   bookingPolicy: BookingPolicy;
@@ -52,9 +45,6 @@ export class BusinessConfigResponseDto {
 
   @ApiProperty({ type: Object })
   faq: Record<string, string>;
-
-  @ApiProperty({ nullable: true })
-  staticDepositQrUrl: string | null;
 
   @ApiProperty()
   whatsappConnected: boolean;
@@ -67,14 +57,11 @@ export class BusinessConfigResponseDto {
       tone: config.tone,
       businessCategory: config.businessCategory,
       currency: CurrencyResponseDto.from(config.currency),
-      address: config.address,
       logoUrl: config.logoUrl,
       whatsappPhone: config.whatsappPhone,
-      businessHours: config.businessHours,
       bookingPolicy: config.bookingPolicy,
       agentPolicy: config.agentPolicy,
       faq: config.faq,
-      staticDepositQrUrl: config.staticDepositQrUrl,
       whatsappConnected: config.canSendMessages(),
     };
   }

@@ -31,22 +31,28 @@ Arquitectura: [docs/architecture.md](../../../docs/architecture.md) §9.
 
 1. **Solo reactivo.** Nada de campañas / broadcasts / outreach frío con Evolution.
 2. **Webhook ACK inmediato** → BullMQ. Nunca LLM ni `sendText` pesado en el controller HTTP.
-3. **Outbound humano:** al enviar por Evolution incluir `delay` (ms) + `presence: "composing"`
-   (o `recording` para audio). Ver §4 R3 del doc. Hoy el adapter manda `{number,text}` pelado
-   — no dejes regresiones; al tocar el adapter, **agregá** delay/presence. Ojo: en Evolution
-   ≤2.4.0-rc1 el path de typing tira 400 con contactos `@lid` → mandar E.164 y degradar a
-   envío sin presence (nunca retry loop).
-4. **Heurística de delay:** jitter ~3–8s + ~50–90ms/palabra, clamp 2.5–20s (o job equivalente).
-5. **Circuit breaker 463:** ante `MessageUpdate=ERROR` / log 463 / timelock → **no** reintentar
+3. **Outbound humano:** las respuestas del agente van con `typingDelayMs`; el adapter lo
+   traduce a `delay` y Evolution fuerza `composing`. Ver §4 R3 del doc. No mandes una
+   respuesta del agente sin delay. Ojo: en Evolution ≤2.4.0-rc1 el path de typing tira 400
+   con contactos `@lid` → mandar E.164 y degradar a envío sin delay (un retry, nunca loop).
+4. **Heurística de delay:** `human-pacing.ts` (log-normal proporcional al texto, techo que
+   satura, descontando lo que la clienta ya esperó, ×`circadianSlowdown` según hora local).
+   No la dupliques ni la reemplaces por un `random` plano: la forma importa tanto como el
+   jitter, y ningún envío puede caer siempre en el mismo valor de borde.
+5. **Visto solo si contestás.** `markAsRead` va en el camino del agente; una conversación en
+   handoff no se marca leída, porque la dueña todavía no la leyó.
+6. **Debounce:** el inbound persiste apenas llega y el `reply` sale diferido; una ráfaga la
+   contesta el job de la última. No vuelvas a contestar mensaje por mensaje.
+7. **Circuit breaker 463:** ante `MessageUpdate=ERROR` / log 463 / timelock → **no** reintentar
    en loop; pausar outbound del tenant (o al menos contactos nuevos). WA Web no reintenta 463.
-6. **Baileys ≥ rc14** con `tc-token-utils` en `docker/evolution/Dockerfile`. No volver a `rc.9`.
-7. **Webhook en Docker:** `http://api:3010/...` (perfil `stack`). No asumir
+8. **Baileys ≥ rc14** con `tc-token-utils` en `docker/evolution/Dockerfile`. No volver a `rc.9`.
+9. **Webhook en Docker:** `http://api:3010/...` (perfil `stack`). No asumir
    `host.docker.internal` desde WSL.
-8. **Un consumer** de cola: no `yarn start:dev` + `nuvia_api` a la vez.
-9. **Handoff / `botPaused`** se respetan.
-10. **Probes** (`scripts/dev/whatsapp-*`): dev-only, una sonda, off durante restricción.
-11. **LID:** persistir E.164 (`remoteJidAlt`); nunca guardar `@lid` como teléfono.
-12. **Solo `MessagingPort`** habla con Evolution.
+10. **Un consumer** de cola: no `yarn start:dev` + `nuvia_api` a la vez.
+11. **Handoff / `botPaused`** se respetan.
+12. **Probes** (`scripts/dev/whatsapp-*`): dev-only, una sonda, off durante restricción.
+13. **LID:** persistir E.164 (`remoteJidAlt`); nunca guardar `@lid` como teléfono.
+14. **Solo `MessagingPort`** habla con Evolution.
 
 ## Folklore vs evidencia
 
