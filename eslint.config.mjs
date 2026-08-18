@@ -22,6 +22,9 @@ export default tseslint.config(
       'logs/**',
       // Postgres data volume created by docker-compose.
       'postgres/**',
+      // Build-time Node script that patches the Evolution image; not part of the
+      // TS project, runs inside the Docker build.
+      'docker/**',
       'eslint.config.mjs',
     ],
   },

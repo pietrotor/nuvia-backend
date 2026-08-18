@@ -8,6 +8,7 @@ import { BookingActor } from '@domain/appointments/value-objects/booking-actor.v
 import {
   BranchNotFoundError,
   BranchRequiredError,
+  ProfessionalDoesNotPerformServiceError,
   ProfessionalNotAtBranchError,
   ServiceNotOfferedAtBranchError,
 } from '@domain/branches/exceptions/branch.exceptions';
@@ -16,14 +17,19 @@ import { ServiceNotFoundError } from '@domain/services/exceptions/service.except
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
 import { branchRequiredWarning } from './branch-required.warning';
 import { clockLabel } from './clock-label';
-import { asObject, requiredIsoDate, requiredUuid } from './tool-input';
+import {
+  asObject,
+  optionalUuid,
+  requiredIsoDate,
+  requiredUuid,
+} from './tool-input';
 
 @Injectable()
 export class BookAppointmentAgentTool implements AgentTool {
   readonly definition = {
     name: 'book_appointment',
     description:
-      'Agenda un turno en la sucursal de la conversación luego de que la clienta confirme explícitamente servicio, profesional y horario.',
+      'Agenda un turno luego de que la clienta confirme explícitamente servicio, profesional, horario y, si hay más de una opción, sucursal.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -37,6 +43,11 @@ export class BookAppointmentAgentTool implements AgentTool {
         serviceId: { type: 'string' },
         professionalId: { type: 'string' },
         startsAt: { type: 'string', description: 'Fecha y hora ISO 8601' },
+        branchId: {
+          type: 'string',
+          description:
+            'UUID de la sucursal. Obligatorio si el horario existe en más de una o todavía no hay sucursal fijada.',
+        },
         confirmedByClient: {
           type: 'boolean',
           description: 'Debe ser true solo tras confirmación explícita',
@@ -67,7 +78,8 @@ export class BookAppointmentAgentTool implements AgentTool {
         serviceId: requiredUuid(values, 'serviceId'),
         professionalId: requiredUuid(values, 'professionalId'),
         startsAt: requiredIsoDate(values, 'startsAt'),
-        branchId: context.branchId ?? undefined,
+        branchId:
+          optionalUuid(values, 'branchId') ?? context.branchId ?? undefined,
       };
     } catch {
       return {
@@ -136,6 +148,9 @@ export class BookAppointmentAgentTool implements AgentTool {
   }
 
   private explain(error: unknown): string | null {
+    if (error instanceof ProfessionalDoesNotPerformServiceError) {
+      return 'Esa profesional no realiza ese servicio, así que no se reservó nada.';
+    }
     if (error instanceof SlotUnavailableError) {
       return 'Ese horario no se puede reservar: la profesional no trabaja en ese momento, ya está ocupado, o no realiza ese servicio.';
     }

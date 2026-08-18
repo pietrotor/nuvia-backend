@@ -30,3 +30,28 @@ export class ProfessionalNotAtBranchError extends ValidationError {
     });
   }
 }
+
+export class ServiceOfferWindowEmptyError extends ValidationError {
+  constructor() {
+    super(ErrorCode.SERVICE_OFFER_WINDOW_EMPTY);
+  }
+}
+
+export class ServiceOfferWindowNotFoundError extends NotFoundError {
+  constructor(branchId: string, professionalId: string, serviceId: string) {
+    super(ErrorCode.SERVICE_OFFER_WINDOW_NOT_FOUND, {
+      branchId,
+      professionalId,
+      serviceId,
+    });
+  }
+}
+
+export class ProfessionalDoesNotPerformServiceError extends ValidationError {
+  constructor(professionalId: string, serviceId: string) {
+    super(ErrorCode.PROFESSIONAL_DOES_NOT_PERFORM_SERVICE, {
+      professionalId,
+      serviceId,
+    });
+  }
+}

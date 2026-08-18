@@ -155,7 +155,9 @@ export class EvolutionSessionAdapter implements WhatsAppSessionPort {
         byEvents: false,
         base64: false,
         headers: { 'x-webhook-secret': webhookSecret },
-        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE'],
+        // LABELS_ASSOCIATION lets the owner pause/resume the bot by tagging a chat
+        // from her phone; CONNECTION_UPDATE triggers label provisioning on connect.
+        events: ['MESSAGES_UPSERT', 'CONNECTION_UPDATE', 'LABELS_ASSOCIATION'],
       },
     });
   }

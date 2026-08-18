@@ -87,6 +87,86 @@ describe('AvailabilityCalculator', () => {
     ).toBe(false);
   });
 
+  it('tells an overlapping appointment apart from a schedule block', () => {
+    const appointment = new Appointment({
+      id: 'a1',
+      tenantId: 't1',
+      branchId: 'b1',
+      clientId: 'c1',
+      professionalId: 'p1',
+      serviceId: 's1',
+      startsAt: new Date('2026-08-03T10:00:00.000Z'),
+      endsAt: new Date('2026-08-03T10:45:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+      price: Money.of('150.00', Currency.BOB),
+    });
+    const block = new ScheduleBlock({
+      id: 'b1',
+      tenantId: 't1',
+      professionalId: 'p1',
+      startsAt: new Date('2026-08-03T10:00:00.000Z'),
+      endsAt: new Date('2026-08-03T11:00:00.000Z'),
+      reason: 'vacaciones',
+    });
+
+    expect(
+      calculator.slotConflict({
+        startsAt: new Date('2026-08-03T09:30:00.000Z'),
+        endsAt: new Date('2026-08-03T10:15:00.000Z'),
+        appointments: [appointment],
+        blocks: [],
+      }),
+    ).toBe('appointment');
+
+    expect(
+      calculator.slotConflict({
+        startsAt: new Date('2026-08-03T09:30:00.000Z'),
+        endsAt: new Date('2026-08-03T10:15:00.000Z'),
+        appointments: [],
+        blocks: [block],
+      }),
+    ).toBe('block');
+  });
+
+  // 10:00 booked for any length; a 45-minute service can still start at 09:15, not 09:30.
+  it('stops free starts that would overlap an existing booking', () => {
+    const busy = new Appointment({
+      id: 'a1',
+      tenantId: 't1',
+      branchId: 'b1',
+      clientId: 'c1',
+      professionalId: 'p1',
+      serviceId: 's1',
+      startsAt: new Date('2026-08-03T10:00:00.000Z'),
+      endsAt: new Date('2026-08-03T11:00:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+      price: Money.of('150.00', Currency.BOB),
+    });
+
+    const slots = calculator.calculate({
+      weeklyHours: {
+        ...hours,
+        mon: { start: '09:00', end: '12:00' },
+      },
+      durationMinutes: 45,
+      from: new Date('2026-08-03T00:00:00.000Z'),
+      to: new Date('2026-08-03T23:59:59.000Z'),
+      appointments: [busy],
+      blocks: [],
+      timezone: 'UTC',
+      slotStepMinutes: 15,
+    });
+
+    const morning = slots
+      .map((s) => s.startsAt.toISOString())
+      .filter((iso) => iso < '2026-08-03T10:00:00.000Z');
+
+    expect(morning).toEqual([
+      '2026-08-03T09:00:00.000Z',
+      '2026-08-03T09:15:00.000Z',
+    ]);
+  });
+
   // The agent once offered a client 17:00, 18:00 and 19:00 on a Sunday for a 75 minute
   // treatment with a professional who works weekdays until 18:00. These pin down that the
   // schedule never produced any of those.

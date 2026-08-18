@@ -544,4 +544,70 @@ describe('Multi-tenancy (e2e)', () => {
   it('rejects a request with no token', async () => {
     await request(app.getHttpServer()).get('/api/v1/users').expect(401);
   });
+
+  it('keeps agent traces behind superadmin and scoped to the requested tenant', async () => {
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/agent-traces/conversations')
+      .query({ tenantId: '00000000-0000-0000-0000-000000000001' })
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(403);
+
+    const tenants = await request(app.getHttpServer())
+      .get('/api/v1/tenants')
+      .set('Authorization', `Bearer ${superadmin}`)
+      .expect(200);
+
+    const glow = tenants.body.find(
+      (tenant: { name: string }) => tenant.name === 'Estética Glow',
+    );
+    const luna = tenants.body.find(
+      (tenant: { name: string }) => tenant.name === 'Spa Luna',
+    );
+    expect(glow?.id).toBeDefined();
+    expect(luna?.id).toBeDefined();
+
+    const glowList = await request(app.getHttpServer())
+      .get('/api/v1/admin/agent-traces/conversations')
+      .query({ tenantId: glow.id })
+      .set('Authorization', `Bearer ${superadmin}`)
+      .expect(200);
+    expect(Array.isArray(glowList.body.data)).toBe(true);
+
+    const missingConversation = '00000000-0000-4000-8000-000000000099';
+    await request(app.getHttpServer())
+      .get(`/api/v1/admin/agent-traces/conversations/${missingConversation}`)
+      .query({ tenantId: glow.id })
+      .set('Authorization', `Bearer ${superadmin}`)
+      .expect(404);
+
+    // Asking for a conversation under the other tenant still 404s: the scope is
+    // the query tenantId, never a cross-tenant peek.
+    if (glowList.body.data[0]) {
+      await request(app.getHttpServer())
+        .get(
+          `/api/v1/admin/agent-traces/conversations/${glowList.body.data[0].conversation.id}`,
+        )
+        .query({ tenantId: luna.id })
+        .set('Authorization', `Bearer ${superadmin}`)
+        .expect(404);
+    }
+
+    await request(app.getHttpServer())
+      .get('/api/v1/admin/agent-traces/00000000-0000-4000-8000-000000000098')
+      .query({ tenantId: glow.id })
+      .set('Authorization', `Bearer ${superadmin}`)
+      .expect(404);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/admin/agent-traces/prune')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ tenantId: glow.id, olderThanDays: 30 })
+      .expect(403);
+
+    await request(app.getHttpServer())
+      .post('/api/v1/admin/agent-traces/prune')
+      .set('Authorization', `Bearer ${superadmin}`)
+      .send({ tenantId: glow.id, olderThanDays: 30 })
+      .expect(200);
+  });
 });

@@ -3,6 +3,8 @@ import { Service } from '../entities/service.entity';
 
 export interface CreateServiceData {
   name: string;
+  description?: string | null;
+  keywords?: string[];
   durationMinutes: number;
   currency: Currency;
   price: string;
@@ -17,6 +19,8 @@ export interface CreateServiceData {
 
 export interface UpdateServiceData {
   name?: string;
+  description?: string | null;
+  keywords?: string[];
   durationMinutes?: number;
   currency?: Currency;
   price?: string;

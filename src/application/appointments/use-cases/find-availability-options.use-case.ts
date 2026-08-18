@@ -23,7 +23,12 @@ import {
   BRANCH_PROFESSIONAL_REPOSITORY,
   BranchProfessionalRepository,
 } from '@domain/branches/repositories/branch-professional.repository';
+import {
+  BRANCH_SERVICE_REPOSITORY,
+  BranchServiceRepository,
+} from '@domain/branches/repositories/branch-service.repository';
 import { ServiceNotOfferedAtBranchError } from '@domain/branches/exceptions/branch.exceptions';
+import { DomainException } from '@domain/common/exceptions/domain.exception';
 import { ScheduleBlock } from '@domain/schedule-blocks/entities/schedule-block.entity';
 import {
   SCHEDULE_BLOCK_REPOSITORY,
@@ -48,7 +53,9 @@ export enum AvailabilityReason {
   BUSINESS_CLOSED = 'business_closed',
   PROFESSIONAL_OFF = 'professional_off',
   PROFESSIONAL_AT_OTHER_BRANCH = 'professional_at_other_branch',
+  PROFESSIONAL_BLOCKED = 'professional_blocked',
   SERVICE_NOT_OFFERED_AT_BRANCH = 'service_not_offered_at_branch',
+  SERVICE_OUTSIDE_OFFER_WINDOW = 'service_outside_offer_window',
   BEFORE_OPENING = 'before_opening',
   SERVICE_DOES_NOT_FIT = 'service_does_not_fit',
   TOO_SOON = 'too_soon',
@@ -75,6 +82,9 @@ export interface SlotOption {
   startsAt: Date;
   professionalId: string;
   professionalName: string;
+  // Set when availability was scanned across branches; omitted on single-branch answers.
+  branchId?: string;
+  branchName?: string;
 }
 
 export interface PreferredDiagnosis {
@@ -85,6 +95,10 @@ export interface PreferredDiagnosis {
   lastStartThatFits: Date | null;
   // Only for TOO_SOON.
   leadTimeHours: number | null;
+  // Nearest free starts on the same day when the preferred moment is busy — so the agent
+  // can say "ocupada, puedo hasta las 09:15 o desde las 10:45" instead of a dead end.
+  lastStartBefore: Date | null;
+  firstStartAfter: Date | null;
   // Only when the moment is free.
   professionalId: string | null;
   professionalName: string | null;
@@ -131,11 +145,13 @@ const MAX_LOOKAHEAD_DAYS = 90;
 const REASON_PRIORITY: AvailabilityReason[] = [
   AvailabilityReason.AVAILABLE,
   AvailabilityReason.TAKEN,
+  AvailabilityReason.PROFESSIONAL_BLOCKED,
   AvailabilityReason.FULLY_BOOKED,
   AvailabilityReason.TOO_SOON,
   AvailabilityReason.SERVICE_DOES_NOT_FIT,
   AvailabilityReason.BEFORE_OPENING,
   AvailabilityReason.PROFESSIONAL_AT_OTHER_BRANCH,
+  AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW,
   AvailabilityReason.SERVICE_NOT_OFFERED_AT_BRANCH,
   AvailabilityReason.PROFESSIONAL_OFF,
   AvailabilityReason.BUSINESS_CLOSED,
@@ -168,6 +184,8 @@ export class FindAvailabilityOptionsUseCase {
     private readonly scheduleBlockRepository: ScheduleBlockRepository,
     @Inject(BRANCH_PROFESSIONAL_REPOSITORY)
     private readonly branchProfessionalRepository: BranchProfessionalRepository,
+    @Inject(BRANCH_SERVICE_REPOSITORY)
+    private readonly branchServiceRepository: BranchServiceRepository,
   ) {}
 
   async execute(
@@ -235,27 +253,30 @@ export class FindAvailabilityOptionsUseCase {
     branchId: string | undefined,
     actor: BookingActor | undefined,
   ): Promise<ScheduleContext[]> {
-    // An explicit professional must answer for herself: if she does not perform the
-    // service the client deserves to hear that, not a silent search among the others.
-    if (professionalId) {
-      return [
-        await this.scheduleContext.resolve({
-          serviceId: service.id,
-          professionalId,
-          branchId,
-          actor,
-        }),
-      ];
+    const branchIds = branchId
+      ? [branchId]
+      : (
+          await this.branchServiceRepository.findActiveByService(service.id)
+        ).map((offer) => offer.branchId);
+
+    if (branchIds.length === 0) {
+      throw new ServiceNotOfferedAtBranchError(service.id, 'any');
     }
 
+    const professionalIds = professionalId
+      ? [professionalId]
+      : service.professionalIds;
+
     const resolved = await Promise.allSettled(
-      service.professionalIds.map((id) =>
-        this.scheduleContext.resolve({
-          serviceId: service.id,
-          professionalId: id,
-          branchId,
-          actor,
-        }),
+      branchIds.flatMap((candidateBranchId) =>
+        professionalIds.map((id) =>
+          this.scheduleContext.resolve({
+            serviceId: service.id,
+            professionalId: id,
+            branchId: candidateBranchId,
+            actor,
+          }),
+        ),
       ),
     );
     const contexts = resolved
@@ -266,18 +287,32 @@ export class FindAvailabilityOptionsUseCase {
       .map((result) => result.value);
 
     if (contexts.length === 0) {
-      const serviceNotOffered = resolved.every(
-        (result) =>
-          result.status === 'rejected' &&
-          result.reason instanceof ServiceNotOfferedAtBranchError,
-      );
-      if (serviceNotOffered) {
-        const rejection = resolved.find(
+      const rejections = resolved
+        .filter(
           (result): result is PromiseRejectedResult =>
             result.status === 'rejected',
+        )
+        .map((result) => result.reason);
+
+      // A broken schedule lookup is not "the business does not offer this": reporting it as
+      // one made the agent tell the client something false. Only a domain verdict may be
+      // turned into an answer; anything else has to surface as the failure it is.
+      const crash = rejections.find(
+        (reason) => !(reason instanceof DomainException),
+      );
+      if (crash) throw crash;
+
+      // An explicit professional must answer for herself: surface her failure, not a
+      // silent empty search among the others.
+      if (professionalId && rejections.length) throw rejections[0];
+
+      const serviceNotOffered =
+        rejections.length > 0 &&
+        rejections.every(
+          (reason) => reason instanceof ServiceNotOfferedAtBranchError,
         );
-        throw rejection!.reason;
-      }
+      if (serviceNotOffered) throw rejections[0];
+
       throw new SlotUnavailableError();
     }
     return contexts;
@@ -437,6 +472,8 @@ export class FindAvailabilityOptionsUseCase {
           startsAt: slot.startsAt,
           professionalId: context.professional.id,
           professionalName: context.professional.name,
+          branchId: context.branch.id,
+          branchName: context.branch.name,
         })),
     );
   }
@@ -462,11 +499,14 @@ export class FindAvailabilityOptionsUseCase {
     timezone: string,
   ): PreferredDiagnosis {
     const { context } = entry;
+    const neighbours = this.neighboursOnDay(entry, preferredAt, timezone);
     const base = {
       at: preferredAt,
       available: false,
       lastStartThatFits: null,
       leadTimeHours: null,
+      lastStartBefore: neighbours.lastStartBefore,
+      firstStartAfter: neighbours.firstStartAfter,
       professionalId: null,
       professionalName: null,
     };
@@ -487,7 +527,12 @@ export class FindAvailabilityOptionsUseCase {
 
     const hours = context.weeklyHours[dayKey];
     if (!hours) {
-      return { ...base, reason: AvailabilityReason.PROFESSIONAL_OFF };
+      return {
+        ...base,
+        reason: context.serviceWindowHours
+          ? AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW
+          : AvailabilityReason.PROFESSIONAL_OFF,
+      };
     }
 
     const opensAt = this.atTime(local, hours.start);
@@ -515,24 +560,58 @@ export class FindAvailabilityOptionsUseCase {
 
     // The exact interval the client asked for, not the nearest slot on the grid: someone
     // who says "a las 19:15" deserves an answer about 19:15.
-    const free = this.availability.isSlotAvailable({
+    const conflict = this.availability.slotConflict({
       startsAt: preferredAt,
       endsAt: endsAt.toJSDate(),
-      weeklyHours: context.weeklyHours,
       appointments: entry.appointments,
       blocks: entry.blocks,
-      timezone,
     });
 
-    return free
-      ? {
-          ...base,
-          available: true,
-          reason: AvailabilityReason.AVAILABLE,
-          professionalId: context.professional.id,
-          professionalName: context.professional.name,
-        }
-      : { ...base, reason: AvailabilityReason.TAKEN };
+    if (!conflict) {
+      return {
+        ...base,
+        available: true,
+        reason: AvailabilityReason.AVAILABLE,
+        lastStartBefore: null,
+        firstStartAfter: null,
+        professionalId: context.professional.id,
+        professionalName: context.professional.name,
+      };
+    }
+
+    return {
+      ...base,
+      reason:
+        conflict === 'block'
+          ? AvailabilityReason.PROFESSIONAL_BLOCKED
+          : AvailabilityReason.TAKEN,
+    };
+  }
+
+  // Free starts on the same local day, either side of the preferred moment.
+  private neighboursOnDay(
+    entry: ProfessionalAvailability,
+    preferredAt: Date,
+    timezone: string,
+  ): { lastStartBefore: Date | null; firstStartAfter: Date | null } {
+    const day = this.dayOf(entry, preferredAt, timezone);
+    if (!day || day.slots.length === 0) {
+      return { lastStartBefore: null, firstStartAfter: null };
+    }
+
+    let lastStartBefore: Date | null = null;
+    let firstStartAfter: Date | null = null;
+    for (const slot of day.slots) {
+      if (slot.startsAt.getTime() < preferredAt.getTime()) {
+        lastStartBefore = slot.startsAt;
+      } else if (
+        slot.startsAt.getTime() > preferredAt.getTime() &&
+        firstStartAfter === null
+      ) {
+        firstStartAfter = slot.startsAt;
+      }
+    }
+    return { lastStartBefore, firstStartAfter };
   }
 
   // Days inside the requested range where nobody had anything, each with the reason that
@@ -591,6 +670,9 @@ export class FindAvailabilityOptionsUseCase {
         ? AvailabilityReason.PROFESSIONAL_AT_OTHER_BRANCH
         : AvailabilityReason.PROFESSIONAL_OFF;
     }
+    if (entry.context.serviceWindowHours) {
+      return AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW;
+    }
     return AvailabilityReason.PROFESSIONAL_OFF;
   }
 
@@ -607,9 +689,7 @@ export class FindAvailabilityOptionsUseCase {
     if (to <= from) return null;
 
     const scanned = await Promise.all(
-      contexts.map((context) =>
-        this.scan(context, from, to, durationMinutes),
-      ),
+      contexts.map((context) => this.scan(context, from, to, durationMinutes)),
     );
     const [earliest] = this.optionsUntil(scanned, null).sort(
       (a, b) => a.startsAt.getTime() - b.startsAt.getTime(),

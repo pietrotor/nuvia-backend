@@ -21,8 +21,14 @@ import {
 import {
   INBOUND_MESSAGE_JOB,
   INBOUND_MESSAGES_QUEUE,
+  LABEL_ASSOCIATION_JOB,
+  LABEL_ENSURE_JOB,
 } from '@infrastructure/queues/queue.constants';
-import { InboundMessageJob } from '@infrastructure/queues/processors/inbound-messages.processor';
+import {
+  InboundMessageJob,
+  LabelAssociationJob,
+  LabelEnsureJob,
+} from '@infrastructure/queues/processors/inbound-messages.processor';
 
 @ApiExcludeController()
 @Controller('webhooks/whatsapp')
@@ -32,7 +38,9 @@ export class WhatsAppWebhookController {
     @Inject(BUSINESS_CONFIG_REPOSITORY)
     private readonly businessConfigRepository: BusinessConfigRepository,
     @InjectQueue(INBOUND_MESSAGES_QUEUE)
-    private readonly inboundQueue: Queue<InboundMessageJob>,
+    private readonly inboundQueue: Queue<
+      InboundMessageJob | LabelAssociationJob | LabelEnsureJob
+    >,
   ) {}
 
   @Post()
@@ -63,6 +71,23 @@ export class WhatsAppWebhookController {
     const event = String(payload.event ?? '')
       .toUpperCase()
       .replaceAll('.', '_');
+
+    // Label sync is opt-in per tenant; skip the queue work entirely when off.
+    const labelSyncOn = config.agentPolicy?.humanAttentionLabelSync === true;
+
+    if (event === 'LABELS_ASSOCIATION') {
+      if (labelSyncOn)
+        await this.enqueueLabelAssociation(config.tenantId, payload);
+      return { accepted: true };
+    }
+
+    if (event === 'CONNECTION_UPDATE') {
+      if (labelSyncOn && this.isConnectedUpdate(payload)) {
+        await this.enqueueLabelEnsure(config.tenantId);
+      }
+      return { accepted: true };
+    }
+
     if (event !== 'MESSAGES_UPSERT') {
       return { accepted: true };
     }
@@ -82,6 +107,55 @@ export class WhatsAppWebhookController {
     );
 
     return { accepted: true };
+  }
+
+  private async enqueueLabelAssociation(
+    tenantId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const data = payload.data as Record<string, unknown> | undefined;
+    const chatJid = typeof data?.chatId === 'string' ? data.chatId : undefined;
+    const labelId =
+      typeof data?.labelId === 'string'
+        ? data.labelId
+        : typeof data?.labelId === 'number'
+          ? String(data.labelId)
+          : undefined;
+    const action = data?.type === 'remove' ? 'remove' : 'add';
+    if (!chatJid || !labelId) return;
+
+    await this.inboundQueue.add(
+      LABEL_ASSOCIATION_JOB,
+      { tenantId, chatJid, labelId, action },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2_000 },
+        removeOnComplete: 1000,
+        removeOnFail: 5000,
+      },
+    );
+  }
+
+  private async enqueueLabelEnsure(tenantId: string): Promise<void> {
+    await this.inboundQueue.add(
+      LABEL_ENSURE_JOB,
+      { tenantId },
+      {
+        // One provisioning attempt in flight per tenant: reconnects are frequent
+        // and the job is idempotent.
+        jobId: `${tenantId}-label-ensure`,
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2_000 },
+        removeOnComplete: true,
+        removeOnFail: 5000,
+      },
+    );
+  }
+
+  private isConnectedUpdate(payload: Record<string, unknown>): boolean {
+    const data = payload.data as Record<string, unknown> | undefined;
+    const state = data?.state ?? data?.connection;
+    return String(state ?? '').toLowerCase() === 'open';
   }
 
   private resolveProviderMessageId(payload: Record<string, unknown>): string {

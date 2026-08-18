@@ -5,7 +5,9 @@
 export interface CatalogProfessional {
   id: string;
   name: string;
+  // Day names only (no clock times): free slots come from find_availability.
   workingDays: string[];
+  branchNames?: string[];
 }
 
 export interface CatalogService {
@@ -16,6 +18,9 @@ export interface CatalogService {
   price?: string;
   professionalNames: string[];
   clientChoosesProfessional: boolean;
+  // Where the service is offered when the catalog spans more than one branch.
+  branchNames?: string[];
+  keywords?: string[];
 }
 
 export interface CatalogBranch {
@@ -25,38 +30,48 @@ export interface CatalogBranch {
 }
 
 export interface Catalog {
-  // When set, the catalog is for one location; when absent on a multi-branch tenant,
-  // only `branches` is filled and prices/availability must wait for set_branch.
+  // When set, the catalog is for one location.
   branch?: { name: string; address: string | null };
+  // Multi-branch tenants always list every active branch (with ids) alongside the services.
   branches?: CatalogBranch[];
+  // True when the business has exactly one active branch — stops invented second locations.
+  singleBranch?: boolean;
   professionals: CatalogProfessional[];
   services: CatalogService[];
 }
 
 export function renderCatalog(catalog: Catalog): string {
+  const sections: string[] = [];
+
   if (catalog.branches && catalog.branches.length > 0) {
-    return [
-      'Sucursales (elegir una antes de precios u horarios):',
-      ...catalog.branches.map(branchLine),
-      'Antes de cotizar o buscar horarios: llamar a set_branch con el id que elija la clienta.',
-    ].join('\n');
+    if (catalog.singleBranch && catalog.branches.length === 1) {
+      const only = catalog.branches[0];
+      const address = only.address ? ` — ${only.address}` : '';
+      sections.push(
+        `El negocio tiene una sola sucursal: ${only.name} — id ${only.id}${address}. No existe ninguna otra.`,
+      );
+    } else {
+      sections.push(
+        'Sucursales:',
+        ...catalog.branches.map(branchLine),
+        'No inventes sucursales que no estén en esta lista.',
+        'Esta lista es para nombrar sucursales y ubicar servicios y profesionales, no para hacer elegir una: buscá horarios en todas las que ofrecen el tratamiento y preguntá dónde recién al reservar.',
+      );
+    }
+  } else if (catalog.branch) {
+    sections.push(
+      `Sucursal: ${catalog.branch.name}${
+        catalog.branch.address ? ` — ${catalog.branch.address}` : ''
+      }`,
+    );
   }
 
-  const header = catalog.branch
-    ? [
-        `Sucursal: ${catalog.branch.name}${
-          catalog.branch.address ? ` — ${catalog.branch.address}` : ''
-        }`,
-      ]
-    : [];
-
-  const sections = [
-    ...header,
+  sections.push(
     ...section('Profesionales', catalog.professionals.map(professionalLine)),
     ...section('Servicios', catalog.services.map(serviceLine)),
-  ].filter((line) => line.length > 0);
+  );
 
-  return sections.join('\n');
+  return sections.filter((line) => line.length > 0).join('\n');
 }
 
 function section(title: string, lines: string[]): string[] {
@@ -72,8 +87,12 @@ function professionalLine(professional: CatalogProfessional): string {
   const days = professional.workingDays.length
     ? `trabaja ${professional.workingDays.join(', ')}`
     : 'sin días de trabajo cargados';
+  const branches =
+    professional.branchNames && professional.branchNames.length > 0
+      ? ` — en ${enumerate(professional.branchNames)}`
+      : '';
 
-  return `- ${professional.name} — id ${professional.id} — ${days}`;
+  return `- ${professional.name} — id ${professional.id} — ${days}${branches}`;
 }
 
 function serviceLine(service: CatalogService): string {
@@ -84,8 +103,19 @@ function serviceLine(service: CatalogService): string {
     ? 'se puede elegir con quién'
     : 'no se elige con quién';
   const price = service.price ? ` — ${service.price}` : '';
+  const branches = describeServiceBranches(service.branchNames);
+  const keywords =
+    service.keywords && service.keywords.length > 0
+      ? ` — también: ${service.keywords.join(', ')}`
+      : '';
 
-  return `- ${service.name} — id ${service.id} — ${service.durationMinutes} min${price} — ${professionals} — ${choice}`;
+  return `- ${service.name} — id ${service.id} — ${service.durationMinutes} min${price} — ${professionals} — ${choice}${branches}${keywords}`;
+}
+
+function describeServiceBranches(branchNames: string[] | undefined): string {
+  if (!branchNames || branchNames.length === 0) return '';
+  if (branchNames.length === 1) return ` — solo en ${branchNames[0]}`;
+  return ` — en ${enumerate(branchNames)}`;
 }
 
 function enumerate(names: string[]): string {

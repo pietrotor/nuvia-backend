@@ -52,6 +52,7 @@ export const businessConfigs = pgTable(
     evolutionWebhookTokenHash: varchar('evolution_webhook_token_hash', {
       length: 64,
     }),
+    evolutionHumanLabelId: varchar('evolution_human_label_id', { length: 255 }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),

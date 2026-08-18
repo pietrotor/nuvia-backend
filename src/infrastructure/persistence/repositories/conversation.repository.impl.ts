@@ -53,6 +53,16 @@ export class DrizzleConversationRepository
     return row ? ConversationMapper.toDomain(row) : null;
   }
 
+  async findByClientPhone(
+    clientPhoneE164: string,
+  ): Promise<Conversation | null> {
+    const [row] = await this.selectFrom(
+      conversations,
+      eq(conversations.clientPhoneE164, clientPhoneE164),
+    );
+    return row ? ConversationMapper.toDomain(row) : null;
+  }
+
   async setHandoff(id: string, reason: string): Promise<Conversation | null> {
     const [row] = await this.updateIn(
       conversations,

@@ -9,6 +9,7 @@ import {
 import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { AnthropicLlmAdapter } from './anthropic-llm.adapter';
 import { OpenAiCompatibleLlmAdapter } from './openai-compatible-llm.adapter';
+import { OpenRouterLlmAdapter } from './openrouter-llm.adapter';
 
 @Injectable()
 export class ConfiguredLlmAdapter implements LlmPort {
@@ -16,18 +17,18 @@ export class ConfiguredLlmAdapter implements LlmPort {
     private readonly config: ConfigService,
     private readonly anthropic: AnthropicLlmAdapter,
     private readonly openAiCompatible: OpenAiCompatibleLlmAdapter,
+    private readonly openRouter: OpenRouterLlmAdapter,
   ) {}
 
   chat(input: LlmChatInput): Promise<LlmChatResult> {
-    const provider = this.config.get<string>(
-      'LLM_PROVIDER',
-      'openai-compatible',
-    );
+    const provider = this.config.get<string>('LLM_PROVIDER', 'openrouter');
     switch (provider) {
       case 'anthropic':
         return this.anthropic.chat(input);
       case 'openai-compatible':
         return this.openAiCompatible.chat(input);
+      case 'openrouter':
+        return this.openRouter.chat(input);
       default:
         throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED, { provider });
     }

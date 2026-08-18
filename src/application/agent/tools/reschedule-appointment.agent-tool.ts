@@ -5,6 +5,7 @@ import { BookingActor } from '@domain/appointments/value-objects/booking-actor.v
 import {
   BranchNotFoundError,
   BranchRequiredError,
+  ProfessionalDoesNotPerformServiceError,
   ProfessionalNotAtBranchError,
   ServiceNotOfferedAtBranchError,
 } from '@domain/branches/exceptions/branch.exceptions';
@@ -103,6 +104,14 @@ export class RescheduleAppointmentAgentTool implements AgentTool {
           status: 'warning',
           summary: 'Esa profesional no atiende en la sucursal pedida.',
           nextActions: ['Ofrecer otra profesional o sucursal.'],
+        };
+      }
+      if (error instanceof ProfessionalDoesNotPerformServiceError) {
+        return {
+          status: 'warning',
+          summary:
+            'Esa profesional no realiza el servicio de esa cita, así que la cita quedó como estaba.',
+          nextActions: ['Ofrecer otra profesional o derivar.'],
         };
       }
       throw error;

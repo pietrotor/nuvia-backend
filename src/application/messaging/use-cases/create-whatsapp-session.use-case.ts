@@ -6,7 +6,11 @@ import {
   BUSINESS_CONFIG_REPOSITORY,
   BusinessConfigRepository,
 } from '@domain/business-config/repositories/business-config.repository';
-import { ErrorCode, InternalError } from '@domain/common/exceptions';
+import {
+  ErrorCode,
+  InternalError,
+  ValidationError,
+} from '@domain/common/exceptions';
 import {
   WHATSAPP_SESSION_PORT,
   WhatsAppSessionPort,
@@ -27,6 +31,14 @@ export class CreateWhatsAppSessionUseCase {
     if (!config) throw new BusinessConfigNotFoundError();
 
     if (config.evolutionInstanceName) {
+      // Asking the provider for a QR restarts the underlying socket, which would
+      // drop a session that is already linked.
+      const status = await this.whatsappSession.getStatus(
+        config.evolutionInstanceName,
+      );
+      if (status.connected) {
+        throw new ValidationError(ErrorCode.WHATSAPP_SESSION_ALREADY_CONNECTED);
+      }
       return this.whatsappSession.getQr(config.evolutionInstanceName);
     }
 

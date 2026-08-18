@@ -7,6 +7,7 @@ export interface ConversationRepository {
     occurredAt: Date;
   }): Promise<Conversation>;
   findById(id: string): Promise<Conversation | null>;
+  findByClientPhone(clientPhoneE164: string): Promise<Conversation | null>;
   setHandoff(id: string, reason: string): Promise<Conversation | null>;
   pauseBot(id: string): Promise<Conversation | null>;
   resumeBot(id: string): Promise<Conversation | null>;

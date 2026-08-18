@@ -3,6 +3,8 @@ import { Global, Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 
 import { AgentModule } from '@infrastructure/agent/agent.module';
+import { EnsureHumanAttentionLabelUseCase } from '@application/messaging/use-cases/ensure-human-attention-label.use-case';
+import { SyncConversationLabelUseCase } from '@application/conversations/use-cases/sync-conversation-label.use-case';
 import { EvolutionWebhookParser } from '@infrastructure/messaging/evolution-webhook.parser';
 import { INBOUND_MESSAGES_QUEUE } from './queue.constants';
 import { InboundMessagesProcessor } from './processors/inbound-messages.processor';
@@ -25,7 +27,12 @@ export { INBOUND_MESSAGES_QUEUE } from './queue.constants';
     }),
     BullModule.registerQueue({ name: INBOUND_MESSAGES_QUEUE }),
   ],
-  providers: [EvolutionWebhookParser, InboundMessagesProcessor],
+  providers: [
+    EvolutionWebhookParser,
+    InboundMessagesProcessor,
+    SyncConversationLabelUseCase,
+    EnsureHumanAttentionLabelUseCase,
+  ],
   exports: [BullModule],
 })
 export class QueuesModule {}

@@ -8,6 +8,8 @@ export class ServiceMapper {
       id: row.id,
       tenantId: row.tenantId,
       name: row.name,
+      description: row.description,
+      keywords: row.keywords ?? [],
       durationMinutes: row.durationMinutes,
       currency: row.currency as Currency,
       price: row.price,

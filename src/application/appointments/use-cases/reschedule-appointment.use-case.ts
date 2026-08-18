@@ -67,10 +67,7 @@ export class RescheduleAppointmentUseCase {
       durationMinutes: dto.durationMinutes,
       // Without a staff override the moved appointment keeps the length it already had,
       // instead of snapping back to whatever the service catalog says today.
-      preserveDurationMinutes: minutesBetween(
-        current.startsAt,
-        current.endsAt,
-      ),
+      preserveDurationMinutes: minutesBetween(current.startsAt, current.endsAt),
     });
 
     const previousDeposit = current.depositAmount?.amount ?? null;

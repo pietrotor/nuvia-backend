@@ -112,6 +112,8 @@ describe('FindAvailabilityAgentTool', () => {
           reason: AvailabilityReason.SERVICE_DOES_NOT_FIT,
           lastStartThatFits: new Date('2026-08-10T21:00:00.000Z'),
           leadTimeHours: null,
+          lastStartBefore: null,
+          firstStartAfter: null,
           professionalId: null,
           professionalName: null,
         },
@@ -133,6 +135,8 @@ describe('FindAvailabilityAgentTool', () => {
           reason: AvailabilityReason.TOO_SOON,
           lastStartThatFits: null,
           leadTimeHours: 2,
+          lastStartBefore: null,
+          firstStartAfter: null,
           professionalId: null,
           professionalName: null,
         },
@@ -159,21 +163,96 @@ describe('FindAvailabilityAgentTool', () => {
 
     const result = await tool.execute(validInput, context);
     const data = result.data as {
-      unavailableDays: { label: string; reason: string }[];
+      unavailableDays: { label: string; reason: string; detail: string }[];
     };
 
     expect(data.unavailableDays[0]).toEqual({
       label: 'domingo 9 de agosto',
       reason: AvailabilityReason.BUSINESS_CLOSED,
+      detail: 'El negocio no atiende ese día.',
     });
   });
 
-  it('drops the date from each option when every offer is the same local day', async () => {
+  it('says a preferred hour is occupied and names the bookable exits', async () => {
     findOptions.execute.mockResolvedValue(
       answer({
-        options: [
+        preferred: {
+          at: new Date('2026-08-10T13:30:00.000Z'),
+          available: false,
+          reason: AvailabilityReason.TAKEN,
+          lastStartThatFits: null,
+          leadTimeHours: null,
+          lastStartBefore: new Date('2026-08-10T13:15:00.000Z'),
+          firstStartAfter: new Date('2026-08-10T14:45:00.000Z'),
+          professionalId: null,
+          professionalName: null,
+        },
+      }),
+    );
+
+    const result = await tool.execute(validInput, context);
+    const data = result.data as {
+      mode: string;
+      preferred: { detail: string };
+    };
+
+    expect(data.mode).toBe('resolve_exact_time');
+    expect(data.preferred.detail).toContain('ocupada');
+    expect(data.preferred.detail).toContain('09:15');
+    expect(data.preferred.detail).toContain('10:45');
+    expect(result.offerableTimes).toEqual(
+      expect.arrayContaining(['09:30', '09:15', '10:45']),
+    );
+  });
+
+  it('translates every unavailability reason into a concrete sentence', async () => {
+    const reasons = Object.values(AvailabilityReason).filter(
+      (reason) => reason !== AvailabilityReason.AVAILABLE,
+    );
+
+    for (const reason of reasons) {
+      findOptions.execute.mockResolvedValue(
+        answer({
+          preferred: {
+            at: new Date('2026-08-10T15:00:00.000Z'),
+            available: false,
+            reason,
+            lastStartThatFits:
+              reason === AvailabilityReason.SERVICE_DOES_NOT_FIT
+                ? new Date('2026-08-10T14:00:00.000Z')
+                : null,
+            leadTimeHours: reason === AvailabilityReason.TOO_SOON ? 2 : null,
+            lastStartBefore: null,
+            firstStartAfter: null,
+            professionalId: null,
+            professionalName: null,
+          },
+        }),
+      );
+
+      const result = await tool.execute(validInput, context);
+      const data = result.data as { preferred: { detail: string | null } };
+      expect(data.preferred.detail).toEqual(expect.any(String));
+      expect(data.preferred.detail!.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('presents a specific day as ranges and isolated starts without sampled options', async () => {
+    findOptions.execute.mockResolvedValue(
+      answer({
+        slots: [
           {
             startsAt: new Date('2026-08-10T13:00:00.000Z'),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
+          },
+          {
+            startsAt: new Date('2026-08-10T13:15:00.000Z'),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
+          },
+          {
+            startsAt: new Date('2026-08-10T13:30:00.000Z'),
             professionalId: PROFESSIONAL_ID,
             professionalName: 'Camila',
           },
@@ -183,15 +262,11 @@ describe('FindAvailabilityAgentTool', () => {
             professionalName: 'Camila',
           },
         ],
-        availableDays: [
+        options: [
           {
-            date: new Date('2026-08-10T13:00:00.000Z'),
-            windows: [
-              {
-                from: new Date('2026-08-10T13:00:00.000Z'),
-                to: new Date('2026-08-10T22:00:00.000Z'),
-              },
-            ],
+            startsAt: new Date('2026-08-10T15:00:00.000Z'),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
           },
         ],
       }),
@@ -202,30 +277,46 @@ describe('FindAvailabilityAgentTool', () => {
       context,
     );
     const data = result.data as {
+      mode: string;
       dayLabel: string;
-      options: { label: string }[];
-      availableDays: { label: string; ranges: string[] }[];
+      segments: (
+        | { kind: 'range'; from: string; to: string }
+        | { kind: 'times'; times: { label: string }[] }
+      )[];
+      options?: unknown;
     };
 
+    expect(data.mode).toBe('show_day_schedule');
     expect(data.dayLabel).toBe('lunes 10 de agosto');
-    expect(data.options.map((option) => option.label)).toEqual([
-      '09:00',
-      '15:00',
-    ]);
-    expect(data.availableDays).toEqual([
+    expect(data.segments).toEqual([
       {
-        label: 'lunes 10 de agosto',
-        ranges: ['09:00 a 18:00'],
-        lastStart: '17:00',
+        kind: 'range',
+        label: 'se puede empezar entre 09:00 y 09:30',
+        from: '09:00',
+        to: '09:30',
+      },
+      {
+        kind: 'times',
+        times: [
+          expect.objectContaining({
+            label: '15:00',
+            professionalName: 'Camila',
+          }),
+        ],
       },
     ]);
-    expect((result.nextActions ?? []).join(' ')).toContain('availableDays');
+    expect(data.options).toBeUndefined();
+    expect(result.offerableTimes).toEqual(
+      expect.arrayContaining(['09:00', '09:30', '15:00']),
+    );
+    expect(result.offerableTimes).not.toContain('09:15');
+    expect((result.nextActions ?? []).join(' ')).toContain('segments');
   });
 
-  it('keeps the full date on each option when they span more than one day', async () => {
+  it('presents multiple days as day parts without exact times', async () => {
     findOptions.execute.mockResolvedValue(
       answer({
-        options: [
+        slots: [
           {
             startsAt: new Date('2026-08-10T13:00:00.000Z'),
             professionalId: PROFESSIONAL_ID,
@@ -241,19 +332,74 @@ describe('FindAvailabilityAgentTool', () => {
     );
 
     const result = await tool.execute(
-      { ...validInput, preferredAt: undefined },
+      {
+        ...validInput,
+        preferredAt: undefined,
+        to: '2026-08-12T00:00:00-04:00',
+      },
       context,
     );
     const data = result.data as {
-      dayLabel: string | null;
-      options: { label: string }[];
+      mode: string;
+      days: { label: string; periods: string[] }[];
+      options?: unknown;
     };
 
-    expect(data.dayLabel).toBeNull();
-    expect(data.options.map((option) => option.label)).toEqual([
-      'lunes 10 de agosto, 09:00',
-      'martes 11 de agosto, 09:00',
+    expect(data.mode).toBe('choose_day_and_period');
+    expect(data.days).toEqual([
+      { label: 'lunes 10 de agosto', periods: ['mañana'] },
+      { label: 'martes 11 de agosto', periods: ['mañana'] },
     ]);
+    expect(data.options).toBeUndefined();
+    expect(result.offerableTimes).toEqual([]);
+    expect((result.nextActions ?? []).join(' ')).toContain('qué día y franja');
+  });
+
+  it('filters a specific day by the requested day part', async () => {
+    findOptions.execute.mockResolvedValue(
+      answer({
+        slots: [
+          {
+            startsAt: new Date('2026-08-10T15:45:00.000Z'),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
+          },
+          ...['16:00', '16:15', '16:30'].map((utcHm) => ({
+            startsAt: new Date(`2026-08-10T${utcHm}:00.000Z`),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
+          })),
+          {
+            startsAt: new Date('2026-08-10T22:00:00.000Z'),
+            professionalId: PROFESSIONAL_ID,
+            professionalName: 'Camila',
+          },
+        ],
+      }),
+    );
+
+    const result = await tool.execute(
+      {
+        ...validInput,
+        preferredAt: undefined,
+        dayPart: 'afternoon',
+      },
+      context,
+    );
+    const data = result.data as {
+      requestedPeriod: string;
+      segments: { kind: string; from: string; to: string }[];
+    };
+
+    expect(data.requestedPeriod).toBe('tarde');
+    expect(data.segments).toEqual([
+      expect.objectContaining({
+        kind: 'range',
+        from: '12:00',
+        to: '12:30',
+      }),
+    ]);
+    expect(result.offerableTimes).toEqual(['12:00', '12:30']);
   });
 
   it('offers the next real opening rather than closing the conversation with a no', async () => {
@@ -285,7 +431,7 @@ describe('FindAvailabilityAgentTool', () => {
 
     expect(data.clientChoosesProfessional).toBe(false);
     expect((result.nextActions ?? []).join(' ')).toContain(
-      'no preguntes con quién',
+      'No preguntar profesional',
     );
   });
 
@@ -300,5 +446,25 @@ describe('FindAvailabilityAgentTool', () => {
 
     expect(result.status).toBe('warning');
     expect(result.summary).toContain('no realiza ese servicio');
+  });
+
+  // The client asked for the service, not for anyone in particular: blaming "esa
+  // profesional" invents a request she never made.
+  it('keeps the answer about the service when the client named no professional', async () => {
+    findOptions.execute.mockRejectedValue(new SlotUnavailableError());
+
+    const result = await tool.execute(validInput, context);
+
+    expect(result.status).toBe('warning');
+    expect(result.summary).not.toContain('Esa profesional');
+    expect(result.summary).toContain('ese servicio');
+  });
+
+  it('lets a broken schedule lookup fail instead of dressing it as an answer', async () => {
+    findOptions.execute.mockRejectedValue(new Error('connection terminated'));
+
+    await expect(tool.execute(validInput, context)).rejects.toThrow(
+      'connection terminated',
+    );
   });
 });

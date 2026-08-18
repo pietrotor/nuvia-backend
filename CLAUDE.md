@@ -63,7 +63,7 @@ ESLint enforces boundaries: `domain/` cannot import Nest, Drizzle, `pg`, `expres
 Stable ports (tokens registered only in infrastructure modules):
 
 - `MessagingPort` / `WhatsAppSessionPort` — Evolution today; Meta Cloud later
-- `LlmPort` — OpenAI-compatible default
+- `LlmPort` — OpenRouter by default (OpenAI-compatible protocol; Anthropic native optional)
 - `ObjectStoragePort` — local now; S3/MinIO later
 
 ## Multi-tenancy
@@ -102,8 +102,11 @@ Shared booking path: `BranchResolver` → `ScheduleContextResolver` → `Availab
 `NODE_ENV`, `DB_HOST`, `DB_PORT`, `DB_USERNAME`, `DB_PASSWORD`, `DB_NAME`, `PORT`, `HOST_API`,
 `JWT_SECRET`, `JWT_EXPIRES_IN` (default `12h`), `CORS_ORIGINS`.
 
-(Expect Redis / Evolution / LLM keys when those adapters land.)
+LLM (OpenRouter by default): `LLM_PROVIDER` (`openrouter` | `openai-compatible` | `anthropic`),
+`LLM_BASE_URL`, `LLM_API_KEY`, `LLM_MODEL` (fixed OpenRouter slug with tool support),
+`LLM_MAX_TOKENS`, optional `LLM_HTTP_REFERER` / `LLM_APP_TITLE`. See `.env.template`.
 
+Redis / Evolution keys when those adapters are used.
 ## Known traps
 
 - `nest start --watch` can leave a stale `tsc` watcher after a boot crash — `pkill -f 'n[e]st start'`,

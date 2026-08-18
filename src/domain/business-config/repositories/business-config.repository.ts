@@ -39,6 +39,7 @@ export interface UpdateBusinessConfigData {
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
   evolutionWebhookTokenHash?: string | null;
+  evolutionHumanLabelId?: string | null;
 }
 
 export interface BusinessConfigRepository {

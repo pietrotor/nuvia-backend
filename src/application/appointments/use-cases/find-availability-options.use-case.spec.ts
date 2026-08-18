@@ -2,11 +2,13 @@ import {
   Appointment,
   AppointmentStatus,
 } from '@domain/appointments/entities/appointment.entity';
+import { SlotUnavailableError } from '@domain/appointments/exceptions/appointment.exceptions';
 import { AppointmentRepository } from '@domain/appointments/repositories/appointment.repository';
 import { Branch } from '@domain/branches/entities/branch.entity';
 import { BranchProfessional } from '@domain/branches/entities/branch-professional.entity';
 import { BranchService } from '@domain/branches/entities/branch-service.entity';
 import { BranchProfessionalRepository } from '@domain/branches/repositories/branch-professional.repository';
+import { BranchServiceRepository } from '@domain/branches/repositories/branch-service.repository';
 import { resolveEffectiveBranchService } from '@domain/branches/services/effective-branch-service';
 import {
   AgentTone,
@@ -141,6 +143,7 @@ function contextFor(professional: Professional): ScheduleContext {
     config,
     timezone: TIMEZONE,
     weeklyHours: intersectWeeklyHours(branch.weeklyHours, hours),
+    serviceWindowHours: null,
     earliestStartAt: EARLIEST_START,
   };
 }
@@ -183,6 +186,9 @@ describe('FindAvailabilityOptionsUseCase', () => {
   let branchProfessionalRepository: jest.Mocked<
     Pick<BranchProfessionalRepository, 'findByProfessional'>
   >;
+  let branchServiceRepository: jest.Mocked<
+    Pick<BranchServiceRepository, 'findActiveByService'>
+  >;
   let useCase: FindAvailabilityOptionsUseCase;
 
   beforeEach(() => {
@@ -203,6 +209,19 @@ describe('FindAvailabilityOptionsUseCase', () => {
     branchProfessionalRepository = {
       findByProfessional: jest.fn().mockResolvedValue([]),
     };
+    branchServiceRepository = {
+      findActiveByService: jest.fn().mockResolvedValue([
+        new BranchService({
+          tenantId: 't1',
+          branchId: branch.id,
+          serviceId: hidrafacial.id,
+          priceOverrideAmount: null,
+          depositAmountOverrideAmount: null,
+          depositQrId: null,
+          isActive: true,
+        }),
+      ]),
+    };
 
     useCase = new FindAvailabilityOptionsUseCase(
       scheduleContext as unknown as ScheduleContextResolver,
@@ -210,6 +229,7 @@ describe('FindAvailabilityOptionsUseCase', () => {
       appointmentRepository as unknown as AppointmentRepository,
       scheduleBlockRepository as unknown as ScheduleBlockRepository,
       branchProfessionalRepository as unknown as BranchProfessionalRepository,
+      branchServiceRepository as unknown as BranchServiceRepository,
     );
   });
 
@@ -254,8 +274,8 @@ describe('FindAvailabilityOptionsUseCase', () => {
     expect(result.availableDays).toHaveLength(1);
     expect(result.availableDays[0].windows).toEqual([
       {
-        from: new Date('2026-08-10T13:00:00.000Z'),
-        to: new Date('2026-08-10T22:00:00.000Z'),
+        firstStart: new Date('2026-08-10T13:00:00.000Z'),
+        lastStart: new Date('2026-08-10T21:00:00.000Z'),
       },
     ]);
   });
@@ -429,5 +449,61 @@ describe('FindAvailabilityOptionsUseCase', () => {
       '2026-08-31T13:00:00.000Z',
     );
     expect(result.nextAvailable?.daysAway).toBe(21);
+  });
+
+  it('says when the service is outside the professional offer window that day', async () => {
+    const mondayMorningOnly: WeeklyHours = {
+      mon: { start: '09:00', end: '13:00' },
+      tue: null,
+      wed: null,
+      thu: null,
+      fri: null,
+      sat: null,
+      sun: null,
+    };
+    const base = contextFor(camila);
+    scheduleContext.resolve.mockResolvedValue({
+      ...base,
+      serviceWindowHours: mondayMorningOnly,
+      weeklyHours: intersectWeeklyHours(base.weeklyHours, mondayMorningOnly),
+    });
+
+    const tuesday = {
+      from: new Date('2026-08-11T04:00:00.000Z'),
+      to: new Date('2026-08-12T03:59:59.000Z'),
+    };
+
+    const result = await useCase.execute({
+      serviceId: hidrafacial.id,
+      professionalId: camila.id,
+      preferredAt: new Date('2026-08-11T19:00:00.000Z'), // Tuesday 15:00 local
+      ...tuesday,
+    });
+
+    expect(result.preferred?.reason).toBe(
+      AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW,
+    );
+    expect(result.unavailableDays[0]?.reason).toBe(
+      AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW,
+    );
+    expect(result.slots).toEqual([]);
+  });
+
+  // A missing table once reached the client as "esa profesional no realiza ese servicio".
+  it('surfaces a broken schedule lookup instead of answering that nobody offers the service', async () => {
+    const failure = new Error('relation "x" does not exist');
+    scheduleContext.resolve.mockRejectedValue(failure);
+
+    await expect(
+      useCase.execute({ serviceId: hidrafacial.id, ...MONDAY }),
+    ).rejects.toBe(failure);
+  });
+
+  it('answers that the pairing is not on offer when every professional is ruled out', async () => {
+    scheduleContext.resolve.mockRejectedValue(new SlotUnavailableError());
+
+    await expect(
+      useCase.execute({ serviceId: hidrafacial.id, ...MONDAY }),
+    ).rejects.toBeInstanceOf(SlotUnavailableError);
   });
 });

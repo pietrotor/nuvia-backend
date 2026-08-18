@@ -35,6 +35,8 @@ export enum Permission {
   TENANTS_ADMIN = 'tenants:admin',
   SUBSCRIPTIONS_ADMIN = 'subscriptions:admin',
   BACKFILL_RUN = 'backfill:run',
+  AGENT_TRACES_READ = 'agent_traces:read',
+  AGENT_TRACES_PRUNE = 'agent_traces:prune',
   EVENTS_READ = 'events:read',
 }
 
@@ -45,7 +47,9 @@ const OWNER_PERMISSIONS: ReadonlySet<Permission> = new Set(
     (permission) =>
       permission !== Permission.TENANTS_ADMIN &&
       permission !== Permission.SUBSCRIPTIONS_ADMIN &&
-      permission !== Permission.BACKFILL_RUN,
+      permission !== Permission.BACKFILL_RUN &&
+      permission !== Permission.AGENT_TRACES_READ &&
+      permission !== Permission.AGENT_TRACES_PRUNE,
   ),
 );
 
@@ -74,6 +78,8 @@ const SUPERADMIN_PERMISSIONS: ReadonlySet<Permission> = new Set([
   Permission.TENANTS_ADMIN,
   Permission.SUBSCRIPTIONS_ADMIN,
   Permission.BACKFILL_RUN,
+  Permission.AGENT_TRACES_READ,
+  Permission.AGENT_TRACES_PRUNE,
 ]);
 
 const PERMISSIONS_BY_ROLE: Record<Role, ReadonlySet<Permission>> = {

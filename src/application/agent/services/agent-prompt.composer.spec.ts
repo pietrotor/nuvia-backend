@@ -393,7 +393,8 @@ describe('AgentPromptComposer', () => {
         config: buildConfig(),
       });
 
-      expect(volatileText).toContain('lunes 09:00 a 18:00');
+      expect(volatileText).toContain('trabaja lunes');
+      expect(volatileText).not.toContain('09:00');
       expect(volatileText).not.toContain('domingo');
     });
 
@@ -417,7 +418,7 @@ describe('AgentPromptComposer', () => {
         config: buildConfig(),
       });
 
-      expect(volatileText).toContain('lunes 09:00 a 18:00');
+      expect(volatileText).toContain('trabaja lunes');
       expect(volatileText).not.toContain('domingo');
     });
 
@@ -446,7 +447,7 @@ describe('AgentPromptComposer', () => {
       expect(volatileText).toBe('');
     });
 
-    it('lists only branches when several are active and none is pinned', async () => {
+    it('lists branches with services when several are active and none is pinned', async () => {
       listBranches.execute.mockResolvedValue([
         buildBranch({ id: 'branch-a', name: 'Centro', address: 'Calle 1' }),
         buildBranch({ id: 'branch-b', name: 'Sur', address: 'Calle 2' }),
@@ -461,12 +462,13 @@ describe('AgentPromptComposer', () => {
       expect(volatileText).toContain('Sucursales');
       expect(volatileText).toContain('Centro');
       expect(volatileText).toContain('Sur');
-      expect(volatileText).toContain('set_branch');
-      expect(volatileText).not.toContain('Hidrafacial');
-      expect(listBranchServices.execute).not.toHaveBeenCalled();
+      expect(volatileText).toContain('Hidrafacial');
+      expect(volatileText).toContain('No inventes sucursales');
+      expect(volatileText).not.toContain('set_branch');
+      expect(listBranchServices.execute).toHaveBeenCalled();
     });
 
-    it('does not mention sucursales for a single-branch tenant', async () => {
+    it('states a single-branch tenant has no other locations', async () => {
       const { volatileText } = await composer.compose({
         ...input,
         branchId: null,
@@ -475,8 +477,8 @@ describe('AgentPromptComposer', () => {
 
       expect(volatileText).toContain(CAMILA_ID);
       expect(volatileText).toContain('Hidrafacial');
-      expect(volatileText).not.toContain('Sucursal');
-      expect(volatileText).not.toContain('Sucursales');
+      expect(volatileText).toContain('tiene una sola sucursal');
+      expect(volatileText).toContain('No existe ninguna otra');
     });
   });
 

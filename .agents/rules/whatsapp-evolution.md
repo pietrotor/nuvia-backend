@@ -51,8 +51,14 @@ Arquitectura: [docs/architecture.md](../../../docs/architecture.md) §9.
 10. **Un consumer** de cola: no `yarn start:dev` + `nuvia_api` a la vez.
 11. **Handoff / `botPaused`** se respetan.
 12. **Probes** (`scripts/dev/whatsapp-*`): dev-only, una sonda, off durante restricción.
-13. **LID:** persistir E.164 (`remoteJidAlt`); nunca guardar `@lid` como teléfono.
-14. **Solo `MessagingPort`** habla con Evolution.
+13. **Nunca inventes un destinatario.** `POST /webhooks/whatsapp` con `MESSAGES_UPSERT` no es
+    un dry-run: encola, corre el agente y manda un `sendText` real. Escribirle a un número
+    inexistente es señal de spam y ya provocó un `device_removed` (doc §6.1). Para probar
+    auth/routing usá un `event` distinto de `MESSAGES_UPSERT`: el controller valida secreto,
+    instancia y token **antes** del evento, así que `401` vs `202` te dice todo sin encolar
+    nada. Si necesitás un envío real, pedí un número real; no lo fabriques.
+14. **LID:** persistir E.164 (`remoteJidAlt`); nunca guardar `@lid` como teléfono.
+15. **Solo `MessagingPort`** habla con Evolution.
 
 ## Folklore vs evidencia
 
@@ -65,7 +71,7 @@ Arquitectura: [docs/architecture.md](../../../docs/architecture.md) §9.
 | Síntoma | Acción |
 |---|---|
 | 463 / ERROR en MessageUpdate | Parar probes; chequear Baileys; circuit breaker |
-| `device_removed` | Un re-link QR |
+| `device_removed` | Un re-link QR; revisar si hubo un send a un número inventado |
 | Webhook ECONNREFUSED | URL de red Docker, no spam send |
 | Banner restricción en el tel | Esperar plazo; warm-up; no automatizar |
 

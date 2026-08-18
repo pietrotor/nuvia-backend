@@ -3,6 +3,8 @@ import { Catalog, renderCatalog } from './catalog-state';
 const CAMILA_ID = '2f6ba7e0-5c1a-4a5e-9a3f-1c0f7c9d2b11';
 const DANIELA_ID = '8c3d1b42-7e90-4f21-8a6d-55b0e4a1c7f2';
 const HIDRAFACIAL_ID = 'a1b2c3d4-e5f6-4a7b-8c9d-0e1f2a3b4c5d';
+const BRANCH_A = 'b1111111-1111-4111-8111-111111111111';
+const BRANCH_B = 'b2222222-2222-4222-8222-222222222222';
 
 function buildCatalog(overrides: Partial<Catalog> = {}): Catalog {
   return {
@@ -10,7 +12,7 @@ function buildCatalog(overrides: Partial<Catalog> = {}): Catalog {
       {
         id: CAMILA_ID,
         name: 'Camila Rojas',
-        workingDays: ['lunes 09:00 a 18:00', 'martes 09:00 a 18:00'],
+        workingDays: ['lunes', 'martes'],
       },
     ],
     services: [
@@ -34,12 +36,11 @@ describe('renderCatalog', () => {
     expect(rendered).toContain(`Hidrafacial — id ${HIDRAFACIAL_ID}`);
   });
 
-  it('states the days a professional works so no one is offered on a day off', () => {
+  it('states the days a professional works without clock times', () => {
     const rendered = renderCatalog(buildCatalog());
 
-    expect(rendered).toContain(
-      'trabaja lunes 09:00 a 18:00, martes 09:00 a 18:00',
-    );
+    expect(rendered).toContain('trabaja lunes, martes');
+    expect(rendered).not.toContain('09:00');
     expect(rendered).not.toContain('domingo');
   });
 
@@ -120,19 +121,69 @@ describe('renderCatalog', () => {
     expect(rendered).toContain('Bs 280');
   });
 
-  it('lists only branches when the location is still unresolved', () => {
+  it('lists every branch with services and where each service is offered', () => {
     const rendered = renderCatalog({
       branches: [
-        { id: 'branch-a', name: 'Centro', address: 'Calle 1' },
-        { id: 'branch-b', name: 'Sur', address: null },
+        { id: BRANCH_A, name: 'Centro', address: 'Calle 1' },
+        { id: BRANCH_B, name: 'Sur', address: null },
       ],
-      professionals: [],
-      services: [],
+      professionals: [
+        {
+          id: CAMILA_ID,
+          name: 'Camila Rojas',
+          workingDays: ['lunes'],
+          branchNames: ['Centro'],
+        },
+      ],
+      services: [
+        {
+          id: HIDRAFACIAL_ID,
+          name: 'Hidrafacial',
+          durationMinutes: 75,
+          professionalNames: ['Camila Rojas'],
+          clientChoosesProfessional: true,
+          branchNames: ['Centro', 'Sur'],
+        },
+        {
+          id: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+          name: 'Masaje',
+          durationMinutes: 60,
+          professionalNames: ['Camila Rojas'],
+          clientChoosesProfessional: true,
+          branchNames: ['Centro'],
+        },
+      ],
     });
 
-    expect(rendered).toContain('Sucursales');
-    expect(rendered).toContain(`Centro — id branch-a — Calle 1`);
-    expect(rendered).toContain('set_branch');
-    expect(rendered).not.toContain('Profesionales');
+    expect(rendered).toContain('Sucursales:');
+    expect(rendered).toContain(`Centro — id ${BRANCH_A} — Calle 1`);
+    expect(rendered).toContain('Hidrafacial');
+    expect(rendered).toContain('en Centro y Sur');
+    expect(rendered).toContain('solo en Centro');
+    expect(rendered).not.toContain('set_branch');
+    expect(rendered).toContain('No inventes sucursales');
+    // Listing the branches is what used to make the agent open by asking which one.
+    expect(rendered).toContain('preguntá dónde recién al reservar');
+  });
+
+  it('states explicitly that a single-branch business has no other locations', () => {
+    const rendered = renderCatalog({
+      branches: [{ id: BRANCH_A, name: 'Centro', address: 'Calle 1' }],
+      singleBranch: true,
+      professionals: [],
+      services: [
+        {
+          id: HIDRAFACIAL_ID,
+          name: 'Hidrafacial',
+          durationMinutes: 75,
+          professionalNames: [],
+          clientChoosesProfessional: true,
+        },
+      ],
+    });
+
+    expect(rendered).toContain('tiene una sola sucursal: Centro');
+    expect(rendered).toContain('No existe ninguna otra');
+    expect(rendered).toContain('Hidrafacial');
   });
 });

@@ -22,6 +22,8 @@ import { TYPING_CHUNKING_THRESHOLD_MS } from '@domain/messaging/services/human-p
 import { TenantRepository } from '@domain/tenants/repositories/tenant.repository';
 import { SendDepositQrUseCase } from '@application/deposits/use-cases/send-deposit-qr.use-case';
 import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
+import { ConversationHandoffLabelService } from '@application/conversations/services/conversation-handoff-label.service';
+import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
 import { AgentOrchestrator } from '../services/agent-orchestrator.service';
 import { ReplyToConversationUseCase } from './reply-to-conversation.use-case';
@@ -99,9 +101,16 @@ describe('ReplyToConversationUseCase', () => {
   let logger: jest.Mocked<LoggerPort>;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
   let entitlements: jest.Mocked<Pick<PlanEntitlements, 'agentAccess'>>;
+  let handoffLabel: jest.Mocked<
+    Pick<ConversationHandoffLabelService, 'markAttention' | 'clearAttention'>
+  >;
   let useCase: ReplyToConversationUseCase;
 
   beforeEach(() => {
+    handoffLabel = {
+      markAttention: jest.fn().mockResolvedValue(undefined),
+      clearAttention: jest.fn().mockResolvedValue(undefined),
+    };
     conversations = {
       findById: jest.fn().mockResolvedValue(buildConversation()),
       resumeBot: jest.fn().mockResolvedValue(buildConversation()),
@@ -162,6 +171,14 @@ describe('ReplyToConversationUseCase', () => {
       sendDepositQr as unknown as SendDepositQrUseCase,
       audit as unknown as AuditRecorder,
       entitlements as unknown as PlanEntitlements,
+      { save: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        get: jest.fn((key: string, fallback?: string) => {
+          if (key === 'LLM_SHORT_CIRCUIT_GREETINGS') return 'false';
+          return fallback ?? 'true';
+        }),
+      } as never,
+      handoffLabel as unknown as ConversationHandoffLabelService,
     );
   });
 
@@ -184,6 +201,74 @@ describe('ReplyToConversationUseCase', () => {
     expect(orchestrator.respond).not.toHaveBeenCalled();
     expect(messaging.sendText).not.toHaveBeenCalled();
     expect(messaging.markAsRead).not.toHaveBeenCalled();
+  });
+
+  it('short-circuits a pure greeting without calling the LLM', async () => {
+    useCase = new ReplyToConversationUseCase(
+      conversations as unknown as ConversationRepository,
+      messages as unknown as MessageRepository,
+      businessConfigs as unknown as BusinessConfigRepository,
+      {
+        findById: jest.fn().mockResolvedValue({ timezone: 'America/La_Paz' }),
+      } as unknown as TenantRepository,
+      messaging as unknown as MessagingPort,
+      { now: () => now },
+      logger,
+      orchestrator as unknown as AgentOrchestrator,
+      sendDepositQr as unknown as SendDepositQrUseCase,
+      audit as unknown as AuditRecorder,
+      entitlements as unknown as PlanEntitlements,
+      { save: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        get: jest.fn((key: string, fallback?: string) => {
+          if (key === 'LLM_SHORT_CIRCUIT_GREETINGS') return 'true';
+          return fallback ?? 'true';
+        }),
+      } as never,
+      handoffLabel as unknown as ConversationHandoffLabelService,
+    );
+
+    await useCase.execute(input);
+
+    expect(orchestrator.respond).not.toHaveBeenCalled();
+    expect(messaging.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining('Vale'),
+      }),
+    );
+  });
+
+  it('still uses the LLM for a greeting that already carries a request', async () => {
+    useCase = new ReplyToConversationUseCase(
+      conversations as unknown as ConversationRepository,
+      messages as unknown as MessageRepository,
+      businessConfigs as unknown as BusinessConfigRepository,
+      {
+        findById: jest.fn().mockResolvedValue({ timezone: 'America/La_Paz' }),
+      } as unknown as TenantRepository,
+      messaging as unknown as MessagingPort,
+      { now: () => now },
+      logger,
+      orchestrator as unknown as AgentOrchestrator,
+      sendDepositQr as unknown as SendDepositQrUseCase,
+      audit as unknown as AuditRecorder,
+      entitlements as unknown as PlanEntitlements,
+      { save: jest.fn().mockResolvedValue(undefined) } as never,
+      {
+        get: jest.fn((key: string, fallback?: string) => {
+          if (key === 'LLM_SHORT_CIRCUIT_GREETINGS') return 'true';
+          return fallback ?? 'true';
+        }),
+      } as never,
+      handoffLabel as unknown as ConversationHandoffLabelService,
+    );
+    messages.findRecent.mockResolvedValue([
+      buildInbound({ content: 'hola, quiero manicure' }),
+    ]);
+
+    await useCase.execute(input);
+
+    expect(orchestrator.respond).toHaveBeenCalled();
   });
 
   it('does not answer a message that was already answered', async () => {
@@ -263,10 +348,11 @@ describe('ReplyToConversationUseCase', () => {
     await useCase.execute(input);
 
     expect(conversations.resumeBot).toHaveBeenCalledWith('cv1');
+    expect(handoffLabel.clearAttention).toHaveBeenCalled();
     expect(audit.record).toHaveBeenCalledWith(
       expect.objectContaining({
         action: AuditAction.CONVERSATION_BOT_RESUMED,
-        after: { reason: 'auto_timeout' },
+        after: { reason: 'auto_timeout', source: 'auto_timeout' },
       }),
     );
     expect(messaging.sendText).toHaveBeenNthCalledWith(
@@ -392,5 +478,50 @@ describe('ReplyToConversationUseCase', () => {
     expect(messaging.sendText).not.toHaveBeenCalled();
     expect(messaging.markAsRead).not.toHaveBeenCalled();
     expect(conversations.resumeBot).not.toHaveBeenCalled();
+  });
+
+  it('hands off and answers once when the LLM provider fails', async () => {
+    orchestrator.respond.mockRejectedValue(
+      new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        status: 502,
+        error_type: 'provider_unavailable',
+        model: 'anthropic/claude-haiku-4.5',
+      }),
+    );
+
+    await expect(useCase.execute(input)).resolves.toBeUndefined();
+
+    expect(conversations.setHandoff).toHaveBeenCalledWith(
+      'cv1',
+      'llm_provider_error',
+    );
+    expect(audit.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: AuditAction.CONVERSATION_BOT_PAUSED,
+        after: {
+          reason: 'llm_provider_error',
+          code: ErrorCode.LLM_PROVIDER_ERROR,
+        },
+      }),
+    );
+    expect(messaging.sendText).toHaveBeenCalledTimes(1);
+    expect(messaging.sendText).toHaveBeenCalledWith(
+      expect.objectContaining({ text: AgentOutboundCopy.llmUnavailable }),
+    );
+    expect(messages.recordIfNew).toHaveBeenCalledWith(
+      expect.objectContaining({
+        inReplyToProviderMessageId: 'wamid.in',
+        promptFingerprint: null,
+      }),
+    );
+    expect(logger.error).toHaveBeenCalled();
+  });
+
+  it('rethrows non-LLM failures so BullMQ can retry them', async () => {
+    orchestrator.respond.mockRejectedValue(new Error('database down'));
+
+    await expect(useCase.execute(input)).rejects.toThrow('database down');
+    expect(conversations.setHandoff).not.toHaveBeenCalled();
+    expect(messaging.sendText).not.toHaveBeenCalled();
   });
 });

@@ -16,6 +16,7 @@ import { ConversationRepository } from '@domain/conversations/repositories/conve
 import { MessageRepository } from '@domain/conversations/repositories/message.repository';
 import { MessagingPort } from '@domain/messaging/ports/messaging.port';
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { ConversationHandoffLabelService } from '../services/conversation-handoff-label.service';
 import { SendManualMessageUseCase } from './send-manual-message.use-case';
 
 const now = new Date('2026-08-03T18:00:00.000Z');
@@ -37,9 +38,16 @@ describe('SendManualMessageUseCase', () => {
   >;
   let messageRepository: jest.Mocked<Pick<MessageRepository, 'recordIfNew'>>;
   let messaging: jest.Mocked<Pick<MessagingPort, 'sendText'>>;
+  let handoffLabel: jest.Mocked<
+    Pick<ConversationHandoffLabelService, 'markAttention' | 'clearAttention'>
+  >;
   let useCase: SendManualMessageUseCase;
 
   beforeEach(() => {
+    handoffLabel = {
+      markAttention: jest.fn().mockResolvedValue(undefined),
+      clearAttention: jest.fn().mockResolvedValue(undefined),
+    };
     conversationRepository = {
       findById: jest.fn().mockResolvedValue(conversation),
       recordManualReply: jest.fn().mockResolvedValue(conversation),
@@ -92,6 +100,7 @@ describe('SendManualMessageUseCase', () => {
       messaging as unknown as MessagingPort,
       clock,
       { record: jest.fn() } as unknown as AuditRecorder,
+      handoffLabel as unknown as ConversationHandoffLabelService,
     );
   });
 

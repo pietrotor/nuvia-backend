@@ -13,6 +13,7 @@ import { AppointmentRepository } from '@domain/appointments/repositories/appoint
 import { Branch } from '@domain/branches/entities/branch.entity';
 import { BranchProfessional } from '@domain/branches/entities/branch-professional.entity';
 import { BranchService } from '@domain/branches/entities/branch-service.entity';
+import { ProfessionalDoesNotPerformServiceError } from '@domain/branches/exceptions/branch.exceptions';
 import { BranchProfessionalRepository } from '@domain/branches/repositories/branch-professional.repository';
 import { BranchServiceRepository } from '@domain/branches/repositories/branch-service.repository';
 import {
@@ -105,6 +106,9 @@ describe('RescheduleAppointmentUseCase', () => {
     Pick<ScheduleBlockRepository, 'findOverlapping'>
   >;
   let serviceRepository: jest.Mocked<Pick<ServiceRepository, 'findById'>>;
+  let professionalRepository: jest.Mocked<
+    Pick<ProfessionalRepository, 'findById'>
+  >;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
   let useCase: RescheduleAppointmentUseCase;
 
@@ -126,9 +130,7 @@ describe('RescheduleAppointmentUseCase', () => {
     };
     audit = { record: jest.fn() };
 
-    const professionalRepository: jest.Mocked<
-      Pick<ProfessionalRepository, 'findById'>
-    > = {
+    professionalRepository = {
       findById: jest.fn().mockResolvedValue(
         new Professional({
           id: 'p1',
@@ -208,6 +210,9 @@ describe('RescheduleAppointmentUseCase', () => {
           serviceRepository as unknown as ServiceRepository,
           branchServiceRepository as unknown as BranchServiceRepository,
           branchProfessionalRepository as unknown as BranchProfessionalRepository,
+          {
+            findActiveByAssignmentAndService: jest.fn().mockResolvedValue(null),
+          } as never,
           businessConfigRepository as unknown as BusinessConfigRepository,
           tenantRepository as unknown as TenantRepository,
           clock,
@@ -246,6 +251,24 @@ describe('RescheduleAppointmentUseCase', () => {
     await expect(
       useCase.execute('a1', { startsAt: newStartsAt }),
     ).rejects.toBeInstanceOf(SlotUnavailableError);
+  });
+
+  /* The panel keeps this handover from being offered, but a stale catalogue on screen or
+   * any other client still has to hit the same wall, and hear which one it is. */
+  it('refuses to hand the appointment to somebody who does not perform the service', async () => {
+    professionalRepository.findById.mockResolvedValue(
+      new Professional({
+        id: 'p2',
+        tenantId: 't1',
+        name: 'Rocío',
+        isActive: true,
+      }),
+    );
+
+    await expect(
+      useCase.execute('a1', { startsAt: newStartsAt, professionalId: 'p2' }),
+    ).rejects.toBeInstanceOf(ProfessionalDoesNotPerformServiceError);
+    expect(appointmentRepository.save).not.toHaveBeenCalled();
   });
 
   it('does not reschedule a cancelled appointment', async () => {

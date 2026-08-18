@@ -2,12 +2,17 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { ListClientAppointmentsUseCase } from '@application/appointments/use-cases/list-client-appointments.use-case';
 import { GetBusinessConfigUseCase } from '@application/business-config/use-cases/get-business-config.use-case';
+import { AgentTracePhase } from '@domain/agent/entities/agent-trace.entity';
 import {
   LLM_PORT,
   LlmMessage,
   LlmPort,
   LlmToolChoice,
 } from '@domain/agent/ports/llm.port';
+import {
+  AGENT_TRACE_REPOSITORY,
+  AgentTraceRepository,
+} from '@domain/agent/repositories/agent-trace.repository';
 import { PromptChannel } from '@domain/agent/prompt/prompt-fragment';
 import {
   clockTimes,
@@ -46,6 +51,8 @@ import {
 } from '../tools/agent-tool';
 import { AgentPromptComposer } from './agent-prompt.composer';
 import { AgentToolRegistry } from './agent-tool.registry';
+import { AgentTraceDraft } from './agent-trace.draft';
+import { projectToolResultForModel } from './project-tool-result-for-model';
 
 const MAX_TOOL_ROUNDS = 5;
 const FALLBACK_TIMEZONE = 'America/La_Paz';
@@ -60,7 +67,16 @@ const CLAIM_CORRECTION =
 function scheduleCorrection(offerable: readonly string[]): string {
   const allowed = [...new Set(offerable.flatMap(clockTimes))].sort();
 
-  return `Tu último mensaje nombra horarios que ninguna herramienta devolvió: los completaste vos. Los únicos que podés nombrar ahora son ${allowed.join(', ')}. Reescribilo ofreciendo como mucho cuatro de esos, sin desglosar ninguna franja en horarios sueltos. Si te faltan opciones, volvé a llamar a find_availability en lugar de inventarlas.`;
+  if (allowed.length === 0) {
+    return 'Tu último mensaje nombra horas exactas, pero la herramienta devolvió solamente días y franjas. Reescribilo sin ninguna hora: mostrale los días y franjas disponibles y preguntá cuál prefiere.';
+  }
+
+  return `Tu último mensaje nombra horarios que ninguna herramienta devolvió: los completaste vos. Los únicos que podés nombrar ahora son ${allowed.join(', ')}. Reescribilo copiando únicamente los rangos y horas aisladas que devolvió find_availability, sin desglosar franjas ni agregar muestras propias.`;
+}
+
+export interface AgentRespondTrigger {
+  providerMessageId: string;
+  text: string | null;
 }
 
 export interface AgentResponse {
@@ -99,11 +115,43 @@ export class AgentOrchestrator {
     private readonly promptComposer: AgentPromptComposer,
     @Inject(LOGGER_PORT)
     private readonly logger: LoggerPort,
+    @Inject(AGENT_TRACE_REPOSITORY)
+    private readonly traces: AgentTraceRepository,
   ) {}
 
   async respond(
     history: Message[],
     inbound: InboundAgentContext,
+    trigger: AgentRespondTrigger,
+  ): Promise<AgentResponse> {
+    const draft = new AgentTraceDraft({
+      tenantId: inbound.tenantId,
+      conversationId: inbound.conversationId,
+      triggerProviderMessageId: trigger.providerMessageId,
+      inboundText: trigger.text,
+      startedAt: this.clock.now(),
+    });
+
+    try {
+      const response = await this.runTurn(history, inbound, trigger, draft);
+      await this.persistTrace(
+        draft.finish({
+          text: response.text,
+          endedAt: this.clock.now(),
+        }),
+      );
+      return response;
+    } catch (error) {
+      await this.persistTrace(draft.fail({ error, endedAt: this.clock.now() }));
+      throw error;
+    }
+  }
+
+  private async runTurn(
+    history: Message[],
+    inbound: InboundAgentContext,
+    trigger: AgentRespondTrigger,
+    draft: AgentTraceDraft,
   ): Promise<AgentResponse> {
     const config = await this.getBusinessConfig.execute();
     const tenant = await this.tenants.findById(config.tenantId);
@@ -118,6 +166,8 @@ export class AgentOrchestrator {
       clientId: context.clientId,
       branchId,
     });
+    draft.setPrompt(prompt);
+
     const session: AgentSession = {
       messages: [
         { role: 'system', content: prompt.staticText, cacheable: true },
@@ -134,12 +184,25 @@ export class AgentOrchestrator {
       ],
       followUps: [],
       evidence: [],
-      offerableTimes: [],
+      // Naming a clock time the client just wrote is not inventing one. Without this the
+      // offered-times guard forced a rewrite every time the agent said "las 16:00 no
+      // están libres".
+      offerableTimes: trigger.text ? clockTimes(trigger.text) : [],
     };
 
-    const answer = await this.answerWithTools(session, context);
-    const claimed = await this.verifyClaims(answer, session, context);
-    const text = await this.verifyOfferedTimes(claimed, session, context);
+    const answer = await this.answerWithTools(
+      session,
+      context,
+      draft,
+      'initial',
+    );
+    const claimed = await this.verifyClaims(answer, session, context, draft);
+    const text = await this.verifyOfferedTimes(
+      claimed,
+      session,
+      context,
+      draft,
+    );
 
     return {
       text: toWhatsAppText(text),
@@ -191,6 +254,7 @@ export class AgentOrchestrator {
     answer: string,
     session: AgentSession,
     context: AgentContext,
+    draft: AgentTraceDraft,
   ): Promise<string> {
     const claims = unsupportedClaims(answer, session.evidence);
     if (claims.length === 0) return answer;
@@ -199,11 +263,22 @@ export class AgentOrchestrator {
       `Answer claimed ${claims.join(', ')} with no tool to back it in conversation ${context.conversationId}: forcing a tool round`,
       AgentOrchestrator.name,
     );
+    draft.recordGuard({
+      guard: 'claims',
+      detected: claims,
+      action: 'retry',
+    });
 
     session.messages.push({ role: 'assistant', content: answer });
     session.messages.push({ role: 'user', content: CLAIM_CORRECTION });
 
-    const retried = await this.answerWithTools(session, context, 'any');
+    const retried = await this.answerWithTools(
+      session,
+      context,
+      draft,
+      'claim_retry',
+      'any',
+    );
     const stillUnsupported = unsupportedClaims(retried, session.evidence);
     if (stillUnsupported.length === 0) return retried;
 
@@ -212,10 +287,18 @@ export class AgentOrchestrator {
       undefined,
       AgentOrchestrator.name,
     );
+    draft.recordGuard({
+      guard: 'claims',
+      detected: stillUnsupported,
+      action: 'handoff',
+    });
+    draft.setPendingOutcome('handoff_claims');
     await this.executeTool(
       'request_handoff',
       JSON.stringify({ reason: `unverified_${stillUnsupported.join('_')}` }),
       context,
+      draft,
+      0,
     );
 
     return stillUnsupported.includes(OutboundClaim.BOOKING)
@@ -230,6 +313,7 @@ export class AgentOrchestrator {
     answer: string,
     session: AgentSession,
     context: AgentContext,
+    draft: AgentTraceDraft,
   ): Promise<string> {
     const invented = unofferedTimes(answer, session.offerableTimes);
     if (invented.length === 0) return answer;
@@ -238,6 +322,11 @@ export class AgentOrchestrator {
       `Answer offered ${invented.join(', ')}, which no tool returned, in conversation ${context.conversationId}: asking for a rewrite`,
       AgentOrchestrator.name,
     );
+    draft.recordGuard({
+      guard: 'offered_times',
+      detected: invented,
+      action: 'retry',
+    });
 
     session.messages.push({ role: 'assistant', content: answer });
     session.messages.push({
@@ -245,7 +334,12 @@ export class AgentOrchestrator {
       content: scheduleCorrection(session.offerableTimes),
     });
 
-    const retried = await this.answerWithTools(session, context);
+    const retried = await this.answerWithTools(
+      session,
+      context,
+      draft,
+      'schedule_retry',
+    );
     const stillInvented = unofferedTimes(retried, session.offerableTimes);
     if (stillInvented.length === 0) return retried;
 
@@ -254,10 +348,18 @@ export class AgentOrchestrator {
       undefined,
       AgentOrchestrator.name,
     );
+    draft.recordGuard({
+      guard: 'offered_times',
+      detected: stillInvented,
+      action: 'handoff',
+    });
+    draft.setPendingOutcome('handoff_schedule');
     await this.executeTool(
       'request_handoff',
       JSON.stringify({ reason: 'invented_schedule' }),
       context,
+      draft,
+      0,
     );
 
     return AgentOutboundCopy.unverifiedSchedule;
@@ -269,14 +371,37 @@ export class AgentOrchestrator {
   private async answerWithTools(
     session: AgentSession,
     context: AgentContext,
+    draft: AgentTraceDraft,
+    phase: AgentTracePhase,
     firstChoice: LlmToolChoice = 'auto',
   ): Promise<string> {
     for (let round = 0; round < MAX_TOOL_ROUNDS; round += 1) {
+      const toolChoice = round === 0 ? firstChoice : 'auto';
+      draft.recordLlmRequest({
+        round,
+        phase,
+        toolChoice,
+        messages: session.messages,
+      });
+
+      const startedAt = this.clock.now().getTime();
       const result = await this.llm.chat({
         messages: session.messages,
         tools: this.tools.definitions(),
-        toolChoice: round === 0 ? firstChoice : 'auto',
+        toolChoice,
+        sessionId: context.conversationId,
       });
+      draft.recordLlmResponse({
+        round,
+        phase,
+        content: result.content,
+        toolCalls: result.toolCalls,
+        latencyMs: this.clock.now().getTime() - startedAt,
+        model: result.model,
+        usage: result.usage,
+        finishReason: result.finishReason,
+      });
+
       if (result.toolCalls.length === 0) {
         return (
           result.content?.trim() || AgentOutboundCopy.incompleteConsultation
@@ -293,6 +418,8 @@ export class AgentOrchestrator {
           call.name,
           call.arguments,
           context,
+          draft,
+          round,
         );
         if (toolResult.status === 'success') {
           session.evidence.push(call.name);
@@ -316,16 +443,14 @@ export class AgentOrchestrator {
           name: call.name,
           toolCallId: call.id,
           // The follow-up is an instruction for us, not context for the model.
-          content: JSON.stringify({
-            status: toolResult.status,
-            summary: toolResult.summary,
-            data: toolResult.data,
-            nextActions: toolResult.nextActions,
-          }),
+          content: JSON.stringify(
+            projectToolResultForModel(call.name, toolResult),
+          ),
         });
       }
     }
 
+    draft.setPendingOutcome('max_rounds');
     return AgentOutboundCopy.needsHumanContinuation;
   }
 
@@ -333,18 +458,45 @@ export class AgentOrchestrator {
     name: string,
     rawArguments: string,
     context: AgentContext,
+    draft: AgentTraceDraft,
+    round: number,
   ): Promise<AgentToolResult> {
     const tool = this.tools.get(name);
     if (!tool) {
-      return {
+      const missing: AgentToolResult = {
         status: 'error',
         summary: `La herramienta ${name} no existe.`,
         nextActions: ['No repetir esta herramienta.'],
       };
+      draft.recordToolCall({
+        round,
+        name,
+        arguments: rawArguments,
+        status: 'error',
+        summary: missing.summary,
+        nextActions: missing.nextActions,
+        latencyMs: 0,
+        error: 'tool_not_found',
+      });
+      return missing;
     }
 
+    const startedAt = this.clock.now().getTime();
     try {
-      return await tool.execute(JSON.parse(rawArguments), context);
+      const result = await tool.execute(JSON.parse(rawArguments), context);
+      draft.recordToolCall({
+        round,
+        name,
+        arguments: rawArguments,
+        status: result.status,
+        summary: result.summary,
+        data: result.data,
+        nextActions: result.nextActions,
+        offerableTimes: result.offerableTimes,
+        followUp: result.followUp,
+        latencyMs: this.clock.now().getTime() - startedAt,
+      });
+      return result;
     } catch (error) {
       // The model only sees a generic failure, so without this the tool error is
       // lost and the conversation looks like the agent simply changed its mind.
@@ -355,7 +507,7 @@ export class AgentOrchestrator {
         error instanceof Error ? error.stack : undefined,
         AgentOrchestrator.name,
       );
-      return {
+      const failed: AgentToolResult = {
         status: 'error',
         summary: 'No se pudo ejecutar la acción solicitada.',
         nextActions: [
@@ -363,6 +515,31 @@ export class AgentOrchestrator {
           'Derivar si el error persiste.',
         ],
       };
+      draft.recordToolCall({
+        round,
+        name,
+        arguments: rawArguments,
+        status: 'error',
+        summary: failed.summary,
+        nextActions: failed.nextActions,
+        latencyMs: this.clock.now().getTime() - startedAt,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return failed;
+    }
+  }
+
+  private async persistTrace(
+    trace: Parameters<AgentTraceRepository['save']>[0],
+  ): Promise<void> {
+    try {
+      await this.traces.save(trace);
+    } catch (error) {
+      this.logger.error(
+        `Could not persist agent trace for conversation ${trace.conversationId}`,
+        error instanceof Error ? error.stack : undefined,
+        AgentOrchestrator.name,
+      );
     }
   }
 }

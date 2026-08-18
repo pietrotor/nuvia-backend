@@ -7,6 +7,7 @@ import { BUSINESS_CONFIG_REPOSITORY } from '@domain/business-config/repositories
 import { BRANCH_REPOSITORY } from '@domain/branches/repositories/branch.repository';
 import { BRANCH_PROFESSIONAL_REPOSITORY } from '@domain/branches/repositories/branch-professional.repository';
 import { BRANCH_SERVICE_REPOSITORY } from '@domain/branches/repositories/branch-service.repository';
+import { BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY } from '@domain/branches/repositories/branch-professional-service-window.repository';
 import { USER_BRANCH_REPOSITORY } from '@domain/branches/repositories/user-branch.repository';
 import { PROFESSIONAL_REPOSITORY } from '@domain/professionals/repositories/professional.repository';
 import { SERVICE_REPOSITORY } from '@domain/services/repositories/service.repository';
@@ -23,6 +24,8 @@ import { PLAN_REPOSITORY } from '@domain/subscriptions/repositories/plan.reposit
 import { SUBSCRIPTION_REPOSITORY } from '@domain/subscriptions/repositories/subscription.repository';
 import { AGENT_USAGE_VIEW_REPOSITORY } from '@domain/subscriptions/repositories/agent-usage.view-repository';
 import { PLAN_USAGE_VIEW_REPOSITORY } from '@domain/subscriptions/repositories/plan-usage.view-repository';
+import { AGENT_TRACE_REPOSITORY } from '@domain/agent/repositories/agent-trace.repository';
+import { AGENT_TRACE_VIEW_REPOSITORY } from '@domain/agent/repositories/agent-trace-view.repository';
 
 import { DrizzleTenantRepository } from './repositories/tenant.repository.impl';
 import { DrizzleUserRepository } from './repositories/user.repository.impl';
@@ -31,6 +34,7 @@ import { DrizzleBusinessConfigRepository } from './repositories/business-config.
 import { DrizzleBranchRepository } from './repositories/branch.repository.impl';
 import { DrizzleBranchProfessionalRepository } from './repositories/branch-professional.repository.impl';
 import { DrizzleBranchServiceRepository } from './repositories/branch-service.repository.impl';
+import { DrizzleBranchProfessionalServiceWindowRepository } from './repositories/branch-professional-service-window.repository.impl';
 import { DrizzleUserBranchRepository } from './repositories/user-branch.repository.impl';
 import { DrizzleProfessionalRepository } from './repositories/professional.repository.impl';
 import { DrizzleServiceRepository } from './repositories/service.repository.impl';
@@ -47,6 +51,8 @@ import { DrizzlePlanRepository } from './repositories/plan.repository.impl';
 import { DrizzleSubscriptionRepository } from './repositories/subscription.repository.impl';
 import { DrizzleAgentUsageViewRepository } from './repositories/agent-usage.view-repository.impl';
 import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-repository.impl';
+import { DrizzleAgentTraceRepository } from './repositories/agent-trace.repository.impl';
+import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view.repository.impl';
 
 @Global()
 @Module({
@@ -66,6 +72,10 @@ import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-r
     {
       provide: BRANCH_SERVICE_REPOSITORY,
       useClass: DrizzleBranchServiceRepository,
+    },
+    {
+      provide: BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY,
+      useClass: DrizzleBranchProfessionalServiceWindowRepository,
     },
     {
       provide: USER_BRANCH_REPOSITORY,
@@ -116,6 +126,14 @@ import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-r
       provide: PLAN_USAGE_VIEW_REPOSITORY,
       useClass: DrizzlePlanUsageViewRepository,
     },
+    {
+      provide: AGENT_TRACE_REPOSITORY,
+      useClass: DrizzleAgentTraceRepository,
+    },
+    {
+      provide: AGENT_TRACE_VIEW_REPOSITORY,
+      useClass: DrizzleAgentTraceViewRepository,
+    },
   ],
   exports: [
     TENANT_REPOSITORY,
@@ -125,6 +143,7 @@ import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-r
     BRANCH_REPOSITORY,
     BRANCH_PROFESSIONAL_REPOSITORY,
     BRANCH_SERVICE_REPOSITORY,
+    BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY,
     USER_BRANCH_REPOSITORY,
     PROFESSIONAL_REPOSITORY,
     SERVICE_REPOSITORY,
@@ -141,6 +160,8 @@ import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-r
     SUBSCRIPTION_REPOSITORY,
     AGENT_USAGE_VIEW_REPOSITORY,
     PLAN_USAGE_VIEW_REPOSITORY,
+    AGENT_TRACE_REPOSITORY,
+    AGENT_TRACE_VIEW_REPOSITORY,
   ],
 })
 export class PersistenceModule {}

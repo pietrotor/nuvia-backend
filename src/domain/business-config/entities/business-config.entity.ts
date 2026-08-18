@@ -22,18 +22,29 @@ export enum EmojiPolicy {
   EXPRESSIVE = 'expressive',
 }
 
+export const DEFAULT_HUMAN_ATTENTION_LABEL_NAME = 'Requiere atención humana';
+
 export interface AgentPolicy {
   /** Minutes of staff silence after pause before inbound can auto-resume the bot. 0 = never. */
   handoffAutoResumeMinutes: number;
   emojiPolicy: EmojiPolicy;
   // Business facts the owner wants the agent to mention. Data, never instructions.
   businessNotes: string | null;
+  // When on, Nuvi mirrors the handoff (bot paused) state onto a WhatsApp Business
+  // label, and honours the owner adding/removing that label from her phone.
+  // Opt-in per tenant: label sync on Evolution/Baileys is best-effort and must be
+  // verified against a real device before turning on (see evolution-whatsapp-ops).
+  humanAttentionLabelSync: boolean;
+  // Owner-facing text of that label. Configurable so each business can word it.
+  humanAttentionLabelName: string;
 }
 
 export const DEFAULT_AGENT_POLICY: AgentPolicy = {
   handoffAutoResumeMinutes: 60,
   emojiPolicy: EmojiPolicy.LIGHT,
   businessNotes: null,
+  humanAttentionLabelSync: false,
+  humanAttentionLabelName: DEFAULT_HUMAN_ATTENTION_LABEL_NAME,
 };
 
 export interface DayHours {
@@ -67,6 +78,9 @@ export interface BusinessConfigProps {
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
   evolutionWebhookTokenHash?: string | null;
+  // Provider id of the "human attention" label, resolved once the instance is
+  // linked. Infra identity, like evolutionInstanceId; never set from the panel.
+  evolutionHumanLabelId?: string | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -91,6 +105,7 @@ export class BusinessConfig {
   public readonly evolutionInstanceId: string | null;
   public readonly evolutionInstanceName: string | null;
   public readonly evolutionWebhookTokenHash: string | null;
+  public readonly evolutionHumanLabelId: string | null;
   public readonly createdAt?: Date;
   public readonly updatedAt?: Date;
 
@@ -111,6 +126,7 @@ export class BusinessConfig {
     this.evolutionInstanceId = props.evolutionInstanceId ?? null;
     this.evolutionInstanceName = props.evolutionInstanceName ?? null;
     this.evolutionWebhookTokenHash = props.evolutionWebhookTokenHash ?? null;
+    this.evolutionHumanLabelId = props.evolutionHumanLabelId ?? null;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
   }

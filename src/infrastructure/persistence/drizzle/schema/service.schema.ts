@@ -9,6 +9,7 @@ import {
   index,
   primaryKey,
   check,
+  text,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -25,6 +26,13 @@ export const services = pgTable(
       .notNull()
       .references(() => tenants.id, { onDelete: 'cascade' }),
     name: varchar('name', { length: 255 }).notNull(),
+    // How the owner describes the service; the agent uses it for fuzzy matching.
+    description: text('description'),
+    // Alternate names a client might use ("masaje chino", "descontracturante").
+    keywords: text('keywords')
+      .array()
+      .notNull()
+      .default(sql`'{}'::text[]`),
     durationMinutes: integer('duration_minutes').notNull(),
     // No default: the currency of a price is resolved from the business config when
     // the service is created, so a row can never carry an amount without it.

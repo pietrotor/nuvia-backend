@@ -18,6 +18,7 @@ import { RescheduleAppointmentAgentTool } from '@application/agent/tools/resched
 import { SetBranchAgentTool } from '@application/agent/tools/set-branch.agent-tool';
 import { RecordInboundMessageUseCase } from '@application/agent/use-cases/record-inbound-message.use-case';
 import { ReplyToConversationUseCase } from '@application/agent/use-cases/reply-to-conversation.use-case';
+import { ConversationHandoffLabelService } from '@application/conversations/services/conversation-handoff-label.service';
 import { PROMPT_CATALOG_PORT } from '@domain/agent/ports/prompt-catalog.port';
 import { StaticPromptCatalogAdapter } from './prompts/static-prompt-catalog.adapter';
 import { AppointmentsModule } from '@interface/http/appointments/appointments.module';
@@ -65,6 +66,7 @@ const tools = [
     AgentToolRegistry,
     AgentPromptComposer,
     AgentOrchestrator,
+    ConversationHandoffLabelService,
     RecordInboundMessageUseCase,
     ReplyToConversationUseCase,
   ],

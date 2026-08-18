@@ -1,9 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 
-import {
-  WhatsAppSessionQr,
-  WhatsAppSessionStatus,
-} from '@domain/messaging/ports/whatsapp-session.port';
+import { WhatsAppStatusResult } from '@application/messaging/use-cases/get-whatsapp-status.use-case';
+import { WhatsAppSessionQr } from '@domain/messaging/ports/whatsapp-session.port';
 
 export class WhatsAppQrResponseDto {
   @ApiProperty({ required: false })
@@ -21,14 +19,23 @@ export class WhatsAppQrResponseDto {
 }
 
 export class WhatsAppStatusResponseDto {
-  @ApiProperty()
+  @ApiProperty({
+    description:
+      'True when the tenant has an Evolution instance identity stored (may still be offline).',
+  })
+  configured: boolean;
+
+  @ApiProperty({
+    description: 'True when the live WhatsApp socket is open.',
+  })
   connected: boolean;
 
   @ApiProperty({ required: false })
   phoneNumber?: string;
 
-  static from(status: WhatsAppSessionStatus): WhatsAppStatusResponseDto {
+  static from(status: WhatsAppStatusResult): WhatsAppStatusResponseDto {
     return {
+      configured: status.configured,
       connected: status.connected,
       phoneNumber: status.phoneNumber,
     };

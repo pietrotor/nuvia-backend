@@ -23,18 +23,18 @@ function slotsEvery15(
 }
 
 describe('mergeFreeWindows', () => {
-  it('collapses a full free day into one window', () => {
+  it('collapses a full free day into one bookable-start window', () => {
     const slots = slotsEvery15('09:00', '17:00');
     // Last start 16:45 would be for a shorter service; with 60 min the last start is 17:00.
     const withLast = [...slots, { startsAt: at('17:00') }];
 
     expect(mergeFreeWindows(withLast, 60)).toEqual([
-      { from: at('09:00'), to: at('18:00') },
+      { firstStart: at('09:00'), lastStart: at('17:00') },
     ]);
   });
 
-  it('splits around a booking in the middle of the day', () => {
-    // Free 09:00–12:00 (last start 11:00) and 13:00–18:00 (last start 17:00).
+  it('splits around a booking and exposes lastStart per window, not the occupancy edge', () => {
+    // Free starts 09:00–11:00 and 13:00–17:00 for a 60-minute service.
     const morning = [
       '09:00',
       '09:15',
@@ -67,9 +67,19 @@ describe('mergeFreeWindows', () => {
     ].map((hm) => ({ startsAt: at(hm) }));
 
     expect(mergeFreeWindows([...morning, ...afternoon], 60)).toEqual([
-      { from: at('09:00'), to: at('12:00') },
-      { from: at('13:00'), to: at('18:00') },
+      { firstStart: at('09:00'), lastStart: at('11:00') },
+      { firstStart: at('13:00'), lastStart: at('17:00') },
     ]);
+  });
+
+  it('returns a single start when only one slot fits before a booking', () => {
+    // Appointment at 10:00 for 45 min → only 09:00 and 09:15 are free.
+    expect(
+      mergeFreeWindows(
+        [{ startsAt: at('09:00') }, { startsAt: at('09:15') }],
+        45,
+      ),
+    ).toEqual([{ firstStart: at('09:00'), lastStart: at('09:15') }]);
   });
 
   it('returns nothing when there are no free slots', () => {

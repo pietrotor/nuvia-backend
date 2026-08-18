@@ -25,6 +25,7 @@ export class BusinessConfigMapper {
       evolutionInstanceId: row.evolutionInstanceId,
       evolutionInstanceName: row.evolutionInstanceName,
       evolutionWebhookTokenHash: row.evolutionWebhookTokenHash,
+      evolutionHumanLabelId: row.evolutionHumanLabelId,
       createdAt: row.createdAt,
       updatedAt: row.updatedAt,
     });

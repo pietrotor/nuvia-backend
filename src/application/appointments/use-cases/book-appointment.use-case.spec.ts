@@ -136,6 +136,9 @@ describe('BookAppointmentUseCase', () => {
           serviceRepository as unknown as ServiceRepository,
           branchServiceRepository as unknown as BranchServiceRepository,
           branchProfessionalRepository as unknown as BranchProfessionalRepository,
+          {
+            findActiveByAssignmentAndService: jest.fn().mockResolvedValue(null),
+          } as never,
           businessConfigRepository as unknown as BusinessConfigRepository,
           tenantRepository as unknown as TenantRepository,
           clock,

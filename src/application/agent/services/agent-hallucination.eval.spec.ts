@@ -114,8 +114,18 @@ function buildOrchestrator(
     { now: jest.fn().mockReturnValue(new Date('2026-08-08T14:05:00.000Z')) },
     promptComposer,
     { error: jest.fn(), warn: jest.fn() },
+    {
+      save: jest.fn().mockResolvedValue(undefined),
+      findById: jest.fn(),
+      pruneOlderThan: jest.fn(),
+    } as never,
   );
 }
+
+const trigger = {
+  providerMessageId: 'provider-id',
+  text: 'Quiero confirmar',
+};
 
 describe('agent hallucination eval', () => {
   it('never tells the client a booking happened when the agenda stayed empty', async () => {
@@ -149,12 +159,14 @@ describe('agent hallucination eval', () => {
     const answer = await buildOrchestrator({ chat }, [book, handoff]).respond(
       history(),
       context,
+      trigger,
     );
 
     expect(detectOutboundClaims(answer.text)).toEqual([]);
     expect(answer.text).toBe(AgentOutboundCopy.unverifiedBooking);
     expect(answer.followUps).toEqual([]);
     expect(handoff.execute).toHaveBeenCalled();
+    expect(chat).toHaveBeenCalledTimes(3);
   });
 
   it('lets the confirmation through once the booking is real', async () => {
@@ -184,6 +196,7 @@ describe('agent hallucination eval', () => {
     const answer = await buildOrchestrator({ chat }, [book]).respond(
       history(),
       context,
+      trigger,
     );
 
     expect(detectOutboundClaims(answer.text)).toContain(OutboundClaim.BOOKING);
@@ -191,5 +204,6 @@ describe('agent hallucination eval', () => {
     expect(answer.followUps).toEqual([
       { kind: 'deposit_qr', appointmentId: 'ap1' },
     ]);
+    expect(chat).toHaveBeenCalledTimes(3);
   });
 });

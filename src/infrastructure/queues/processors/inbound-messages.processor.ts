@@ -4,6 +4,8 @@ import { Job, Queue } from 'bullmq';
 
 import { RecordInboundMessageUseCase } from '@application/agent/use-cases/record-inbound-message.use-case';
 import { ReplyToConversationUseCase } from '@application/agent/use-cases/reply-to-conversation.use-case';
+import { EnsureHumanAttentionLabelUseCase } from '@application/messaging/use-cases/ensure-human-attention-label.use-case';
+import { SyncConversationLabelUseCase } from '@application/conversations/use-cases/sync-conversation-label.use-case';
 import { replyDebounceMs } from '@domain/messaging/services/human-pacing';
 import {
   TENANT_CONTEXT_PORT,
@@ -14,6 +16,8 @@ import {
   CONVERSATION_REPLY_JOB,
   INBOUND_MESSAGE_JOB,
   INBOUND_MESSAGES_QUEUE,
+  LABEL_ASSOCIATION_JOB,
+  LABEL_ENSURE_JOB,
 } from '../queue.constants';
 
 export interface InboundMessageJob {
@@ -30,7 +34,22 @@ export interface ConversationReplyJob {
   providerMessageId: string;
 }
 
-type InboundQueueJob = InboundMessageJob | ConversationReplyJob;
+export interface LabelAssociationJob {
+  tenantId: string;
+  chatJid: string;
+  labelId: string;
+  action: 'add' | 'remove';
+}
+
+export interface LabelEnsureJob {
+  tenantId: string;
+}
+
+type InboundQueueJob =
+  | InboundMessageJob
+  | ConversationReplyJob
+  | LabelAssociationJob
+  | LabelEnsureJob;
 
 // A reply spends most of its time waiting: the debounce, the agent thinking and
 // the typing indicator. Serialising those would stall every other tenant.
@@ -44,6 +63,8 @@ export class InboundMessagesProcessor extends WorkerHost {
     private readonly parser: EvolutionWebhookParser,
     private readonly recordInboundMessage: RecordInboundMessageUseCase,
     private readonly replyToConversation: ReplyToConversationUseCase,
+    private readonly syncConversationLabel: SyncConversationLabelUseCase,
+    private readonly ensureHumanAttentionLabel: EnsureHumanAttentionLabelUseCase,
     @Inject(TENANT_CONTEXT_PORT)
     private readonly tenantContext: TenantContextPort,
     @InjectQueue(INBOUND_MESSAGES_QUEUE)
@@ -58,6 +79,10 @@ export class InboundMessagesProcessor extends WorkerHost {
         return this.record(job as Job<InboundMessageJob>);
       case CONVERSATION_REPLY_JOB:
         return this.reply(job as Job<ConversationReplyJob>);
+      case LABEL_ASSOCIATION_JOB:
+        return this.syncLabel(job as Job<LabelAssociationJob>);
+      case LABEL_ENSURE_JOB:
+        return this.ensureLabel(job as Job<LabelEnsureJob>);
       default:
         this.logger.warn(`Ignored unknown job ${job.name}`);
     }
@@ -66,6 +91,22 @@ export class InboundMessagesProcessor extends WorkerHost {
   private async reply(job: Job<ConversationReplyJob>): Promise<void> {
     await this.tenantContext.runWithTenant(job.data.tenantId, () =>
       this.replyToConversation.execute(job.data),
+    );
+  }
+
+  private async syncLabel(job: Job<LabelAssociationJob>): Promise<void> {
+    await this.tenantContext.runWithTenant(job.data.tenantId, () =>
+      this.syncConversationLabel.execute({
+        chatJid: job.data.chatJid,
+        labelId: job.data.labelId,
+        action: job.data.action,
+      }),
+    );
+  }
+
+  private async ensureLabel(job: Job<LabelEnsureJob>): Promise<void> {
+    await this.tenantContext.runWithTenant(job.data.tenantId, () =>
+      this.ensureHumanAttentionLabel.execute(),
     );
   }
 
@@ -82,23 +123,52 @@ export class InboundMessagesProcessor extends WorkerHost {
     );
     if (!recorded.needsReply) return;
 
-    await this.queue.add(
-      CONVERSATION_REPLY_JOB,
-      {
-        tenantId,
-        conversationId: recorded.conversationId,
-        clientId: recorded.clientId,
-        clientPhoneE164: message.clientPhoneE164,
-        providerMessageId,
-      },
-      {
-        jobId: `${tenantId}-reply-${providerMessageId}`,
-        delay: replyDebounceMs(),
-        attempts: 3,
-        backoff: { type: 'exponential', delay: 2_000 },
-        removeOnComplete: 1000,
-        removeOnFail: 5000,
-      },
-    );
+    // One delayed reply per conversation: later messages in a burst replace the
+    // pending job so the LLM runs once against the full history.
+    const replyJobId = `${tenantId}-reply-${recorded.conversationId}`;
+    await this.replaceDelayedReply(replyJobId, {
+      tenantId,
+      conversationId: recorded.conversationId,
+      clientId: recorded.clientId,
+      clientPhoneE164: message.clientPhoneE164,
+      providerMessageId,
+    });
+  }
+
+  private async replaceDelayedReply(
+    jobId: string,
+    data: ConversationReplyJob,
+  ): Promise<void> {
+    const existing = await this.queue.getJob(jobId);
+    const state = existing ? await existing.getState() : undefined;
+
+    // A running reply can't be removed and won't see this message, so the new
+    // one queues under its own id instead of being dropped as a duplicate.
+    if (state === 'active') {
+      await this.enqueueReply(`${jobId}-${data.providerMessageId}`, data);
+      return;
+    }
+
+    // Pending jobs are superseded by this one; finished jobs only linger in the
+    // completed/failed sets, where BullMQ would still reject the id as taken.
+    if (existing) {
+      await existing.remove().catch(() => undefined);
+    }
+
+    await this.enqueueReply(jobId, data);
+  }
+
+  private async enqueueReply(
+    jobId: string,
+    data: ConversationReplyJob,
+  ): Promise<void> {
+    await this.queue.add(CONVERSATION_REPLY_JOB, data, {
+      jobId,
+      delay: replyDebounceMs(),
+      attempts: 3,
+      backoff: { type: 'exponential', delay: 2_000 },
+      removeOnComplete: 1000,
+      removeOnFail: 5000,
+    });
   }
 }

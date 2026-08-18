@@ -2,27 +2,31 @@ import { ConfigService } from '@nestjs/config';
 
 import { AnthropicLlmAdapter } from './anthropic-llm.adapter';
 
-function buildConfig(): ConfigService {
+function buildConfig(values: Record<string, string> = {}): ConfigService {
   return {
     get: jest.fn((key: string, fallback?: string) => {
-      const values: Record<string, string> = {
+      const defaults: Record<string, string> = {
         LLM_BASE_URL: 'https://api.anthropic.com',
         LLM_API_KEY: 'test-key',
         LLM_MODEL: 'claude-sonnet-5',
+        LLM_PROMPT_CACHE: 'true',
+        ...values,
       };
-      return values[key] ?? fallback;
+      return defaults[key] ?? fallback;
     }),
   } as unknown as ConfigService;
 }
 
 function stubResponse(): jest.SpyInstance {
-  return jest.spyOn(global, 'fetch').mockResolvedValue(
-    new Response(
-      JSON.stringify({ content: [{ type: 'text', text: 'Hola.' }] }),
-      {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      },
+  return jest.spyOn(global, 'fetch').mockImplementation(() =>
+    Promise.resolve(
+      new Response(
+        JSON.stringify({ content: [{ type: 'text', text: 'Hola.' }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      ),
     ),
   );
 }
@@ -45,6 +49,23 @@ const tools = [
 describe('AnthropicLlmAdapter', () => {
   afterEach(() => jest.restoreAllMocks());
 
+  it('honours the configured temperature and omits it when empty', async () => {
+    const fetchMock = stubResponse();
+    const messages = [{ role: 'user' as const, content: 'Hola.' }];
+
+    await new AnthropicLlmAdapter(buildConfig()).chat({ messages });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).temperature,
+    ).toBe(0.2);
+
+    await new AnthropicLlmAdapter(buildConfig({ LLM_TEMPERATURE: '' })).chat({
+      messages,
+    });
+    expect(
+      JSON.parse(String(fetchMock.mock.calls[1][1]?.body)),
+    ).not.toHaveProperty('temperature');
+  });
+
   it('lets the model decide by default', async () => {
     const fetchMock = stubResponse();
 
@@ -66,6 +87,21 @@ describe('AnthropicLlmAdapter', () => {
     });
 
     expect(sentToolChoice(fetchMock)).toEqual({ type: 'any' });
+  });
+
+  it('forces a named tool when the caller asks for one', async () => {
+    const fetchMock = stubResponse();
+
+    await new AnthropicLlmAdapter(buildConfig()).chat({
+      messages: [{ role: 'user', content: 'Sí.' }],
+      tools,
+      toolChoice: { type: 'tool', name: 'book_appointment' },
+    });
+
+    expect(sentToolChoice(fetchMock)).toEqual({
+      type: 'tool',
+      name: 'book_appointment',
+    });
   });
 
   it('omits the tool choice when there are no tools to call', async () => {
@@ -99,7 +135,12 @@ describe('AnthropicLlmAdapter', () => {
 
     const result = await adapter.chat({
       messages: [
-        { role: 'system', content: 'Sos un asistente virtual.' },
+        {
+          role: 'system',
+          content: 'Sos un asistente virtual.',
+          cacheable: true,
+        },
+        { role: 'system', content: 'Ahora es martes.' },
         { role: 'user', content: 'Quiero reservar.' },
         {
           role: 'assistant',
@@ -124,25 +165,30 @@ describe('AnthropicLlmAdapter', () => {
       ],
     });
 
-    expect(result).toEqual({
-      content: 'Encontré opciones.',
-      toolCalls: [
-        {
-          id: 'toolu_2',
-          name: 'find_availability',
-          arguments: '{"serviceId":"service-id"}',
-        },
-      ],
-    });
+    expect(result.content).toBe('Encontré opciones.');
+    expect(result.toolCalls).toEqual([
+      {
+        id: 'toolu_2',
+        name: 'find_availability',
+        arguments: '{"serviceId":"service-id"}',
+      },
+    ]);
 
     const request = fetchMock.mock.calls[0];
     expect(request[0]).toBe('https://api.anthropic.com/v1/messages');
     const body = JSON.parse(String(request[1]?.body)) as {
-      system: string;
+      system: { type: string; text: string; cache_control?: unknown }[];
       tools: { input_schema: unknown }[];
       messages: { role: string; content: unknown }[];
     };
-    expect(body.system).toBe('Sos un asistente virtual.');
+    expect(body.system).toEqual([
+      {
+        type: 'text',
+        text: 'Sos un asistente virtual.',
+        cache_control: { type: 'ephemeral' },
+      },
+      { type: 'text', text: 'Ahora es martes.' },
+    ]);
     expect(body.tools[0].input_schema).toEqual({
       type: 'object',
       properties: {},
@@ -171,5 +217,35 @@ describe('AnthropicLlmAdapter', () => {
         ],
       },
     ]);
+  });
+
+  it('maps cache write and read tokens from Anthropic usage', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          content: [{ type: 'text', text: 'Hola.' }],
+          stop_reason: 'end_turn',
+          usage: {
+            input_tokens: 12,
+            output_tokens: 3,
+            cache_read_input_tokens: 100,
+            cache_creation_input_tokens: 20,
+          },
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    const result = await new AnthropicLlmAdapter(buildConfig()).chat({
+      messages: [{ role: 'user', content: 'Hola.' }],
+    });
+
+    expect(result.usage).toEqual({
+      promptTokens: 12,
+      completionTokens: 3,
+      cachedPromptTokens: 100,
+      cacheWriteTokens: 20,
+    });
+    expect(result.finishReason).toBe('stop');
   });
 });

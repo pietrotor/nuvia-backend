@@ -34,6 +34,10 @@ import {
   BranchServiceRepository,
 } from '@domain/branches/repositories/branch-service.repository';
 import {
+  BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY,
+  BranchProfessionalServiceWindowRepository,
+} from '@domain/branches/repositories/branch-professional-service-window.repository';
+import {
   USER_BRANCH_REPOSITORY,
   UserBranchRepository,
 } from '@domain/branches/repositories/user-branch.repository';
@@ -838,6 +842,8 @@ export class SeedUseCase {
     private readonly branchProfessionalRepository: BranchProfessionalRepository,
     @Inject(BRANCH_SERVICE_REPOSITORY)
     private readonly branchServiceRepository: BranchServiceRepository,
+    @Inject(BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY)
+    private readonly serviceWindowRepository: BranchProfessionalServiceWindowRepository,
     @Inject(USER_BRANCH_REPOSITORY)
     private readonly userBranchRepository: UserBranchRepository,
     @Inject(PROFESSIONAL_REPOSITORY)
@@ -878,6 +884,7 @@ export class SeedUseCase {
     // already seen WhatsApp traffic refuses to drop the client book until they are gone.
     await this.conversationRepository.deleteAllUnscoped();
     await this.clientRepository.deleteAllUnscoped();
+    await this.serviceWindowRepository.deleteAllUnscoped();
     await this.branchServiceRepository.deleteAllUnscoped();
     await this.branchProfessionalRepository.deleteAllUnscoped();
     await this.userBranchRepository.deleteAllUnscoped();

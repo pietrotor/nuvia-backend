@@ -8,7 +8,7 @@ export class ListBranchesAgentTool implements AgentTool {
   readonly definition = {
     name: 'list_branches',
     description:
-      'Lista las sucursales activas del negocio (nombre, dirección y mapa). Usala cuando hay más de una y la clienta todavía no eligió dónde atenderse.',
+      'Lista las sucursales activas del negocio (nombre, dirección y mapa).',
     parameters: { type: 'object', properties: {}, additionalProperties: false },
   };
 

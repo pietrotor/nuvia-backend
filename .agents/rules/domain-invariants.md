@@ -20,6 +20,10 @@ Ninguna cita se agenda en un horario ocupado, fuera del horario del profesional,
 el panel y la página de reservas. Prohibido un segundo calculador de slots en el frontend o en el
 adapter de WhatsApp.
 
+El horario efectivo sale de `ScheduleContextResolver`: `Branch ∩ BranchProfessional`, y si existe
+una `BranchProfessionalServiceWindow` activa para ese servicio, se intersecta también. Sin fila de
+ventana = comportamiento histórico (todo el horario del assignment).
+
 **Duración de la cita:** el intervalo vive en `startsAt`/`endsAt`. El catálogo
 (`service.durationMinutes`) es el default. Solo el actor `STAFF` (panel) puede pasar
 `durationMinutes` al book/reschedule/availability; el agente y el booking público siempre

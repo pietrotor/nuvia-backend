@@ -24,4 +24,8 @@ export const AgentOutboundCopy = {
 
   unverifiedDepositQr:
     'Perdón, no pude enviarte el QR desde acá. Ya aviso al equipo para que te pasen los datos del pago.',
+
+  // Provider outage / misconfiguration: never invent an answer, and leave the thread with a human.
+  llmUnavailable:
+    'Estoy con un problema técnico en este momento. Ya aviso al equipo para que te continúe la conversación.',
 } as const;

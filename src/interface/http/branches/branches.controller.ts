@@ -24,20 +24,25 @@ import { CreateBranchDto } from '@application/branches/dto/create-branch.dto';
 import { ListBranchesDto } from '@application/branches/dto/list-branches.dto';
 import { OfferServiceAtBranchDto } from '@application/branches/dto/offer-service-at-branch.dto';
 import { UpdateBranchDto } from '@application/branches/dto/update-branch.dto';
+import { UpsertBranchProfessionalServiceWindowDto } from '@application/branches/dto/upsert-branch-professional-service-window.dto';
 import { AssignProfessionalToBranchUseCase } from '@application/branches/use-cases/assign-professional-to-branch.use-case';
 import { CreateBranchUseCase } from '@application/branches/use-cases/create-branch.use-case';
 import { GetBranchUseCase } from '@application/branches/use-cases/get-branch.use-case';
+import { ListBranchProfessionalServiceWindowsUseCase } from '@application/branches/use-cases/list-branch-professional-service-windows.use-case';
 import { ListBranchProfessionalsUseCase } from '@application/branches/use-cases/list-branch-professionals.use-case';
 import { ListBranchServicesUseCase } from '@application/branches/use-cases/list-branch-services.use-case';
 import { ListBranchesUseCase } from '@application/branches/use-cases/list-branches.use-case';
 import { OfferServiceAtBranchUseCase } from '@application/branches/use-cases/offer-service-at-branch.use-case';
+import { RemoveBranchProfessionalServiceWindowUseCase } from '@application/branches/use-cases/remove-branch-professional-service-window.use-case';
 import { UpdateBranchProfessionalUseCase } from '@application/branches/use-cases/update-branch-professional.use-case';
 import { UpdateBranchServiceUseCase } from '@application/branches/use-cases/update-branch-service.use-case';
 import { UpdateBranchUseCase } from '@application/branches/use-cases/update-branch.use-case';
+import { UpsertBranchProfessionalServiceWindowUseCase } from '@application/branches/use-cases/upsert-branch-professional-service-window.use-case';
 import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 
 import { BranchProfessionalResponseDto } from './dto/branch-professional-response.dto';
+import { BranchProfessionalServiceWindowResponseDto } from './dto/branch-professional-service-window-response.dto';
 import { BranchResponseDto } from './dto/branch-response.dto';
 import { BranchServiceResponseDto } from './dto/branch-service-response.dto';
 
@@ -56,6 +61,9 @@ export class BranchesController {
     private readonly listBranchServices: ListBranchServicesUseCase,
     private readonly offerService: OfferServiceAtBranchUseCase,
     private readonly updateBranchService: UpdateBranchServiceUseCase,
+    private readonly listServiceWindows: ListBranchProfessionalServiceWindowsUseCase,
+    private readonly upsertServiceWindow: UpsertBranchProfessionalServiceWindowUseCase,
+    private readonly removeServiceWindow: RemoveBranchProfessionalServiceWindowUseCase,
   ) {}
 
   @Get()
@@ -179,6 +187,70 @@ export class BranchesController {
       await this.updateBranchService.execute(id, serviceId, {
         isActive: false,
       }),
+    );
+  }
+
+  @Get(':id/professionals/:professionalId/service-windows')
+  @Auth(Permission.BRANCHES_READ)
+  @ApiOperation({
+    summary:
+      'Lists optional service offer windows for a professional at a branch',
+  })
+  @ApiResponse({
+    status: 200,
+    type: [BranchProfessionalServiceWindowResponseDto],
+  })
+  async listProfessionalServiceWindows(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+  ): Promise<BranchProfessionalServiceWindowResponseDto[]> {
+    return (await this.listServiceWindows.execute(id, professionalId)).map(
+      BranchProfessionalServiceWindowResponseDto.from,
+    );
+  }
+
+  @Put(':id/professionals/:professionalId/service-windows/:serviceId')
+  @Auth(Permission.BRANCHES_WRITE)
+  @ApiOperation({
+    summary: 'Sets or updates when a professional offers a service at a branch',
+  })
+  @ApiResponse({
+    status: 200,
+    type: BranchProfessionalServiceWindowResponseDto,
+  })
+  async upsertProfessionalServiceWindow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+    @Body() dto: UpsertBranchProfessionalServiceWindowDto,
+  ): Promise<BranchProfessionalServiceWindowResponseDto> {
+    return BranchProfessionalServiceWindowResponseDto.from(
+      await this.upsertServiceWindow.execute(
+        id,
+        professionalId,
+        serviceId,
+        dto,
+      ),
+    );
+  }
+
+  @Delete(':id/professionals/:professionalId/service-windows/:serviceId')
+  @Auth(Permission.BRANCHES_WRITE)
+  @ApiOperation({
+    summary:
+      'Removes the custom service offer window (falls back to full schedule)',
+  })
+  @ApiResponse({
+    status: 200,
+    type: BranchProfessionalServiceWindowResponseDto,
+  })
+  async removeProfessionalServiceWindow(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('professionalId', ParseUUIDPipe) professionalId: string,
+    @Param('serviceId', ParseUUIDPipe) serviceId: string,
+  ): Promise<BranchProfessionalServiceWindowResponseDto> {
+    return BranchProfessionalServiceWindowResponseDto.from(
+      await this.removeServiceWindow.execute(id, professionalId, serviceId),
     );
   }
 }

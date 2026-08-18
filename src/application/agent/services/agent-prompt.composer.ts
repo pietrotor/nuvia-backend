@@ -41,7 +41,7 @@ import {
   DEFAULT_BUSINESS_CATEGORY,
 } from '@domain/business-config/value-objects/business-category.vo';
 import {
-  describeWorkingDays,
+  describeWorkingDayNames,
   intersectWeeklyHours,
 } from '@domain/business-config/services/weekly-hours';
 
@@ -144,42 +144,147 @@ export class AgentPromptComposer {
       const branch =
         activeBranches.find((row) => row.id === input.branchId) ?? null;
       if (!branch) {
-        return this.renderBranchesOnly(activeBranches);
+        return this.renderBusinessCatalog(activeBranches);
       }
-      return this.renderBranchCatalog(branch);
+      return this.renderBranchCatalog(branch, activeBranches);
     }
 
-    if (activeBranches.length === 1) {
-      // Single-branch tenants keep the same catalog shape as before: no "sucursales" talk.
-      return this.renderBranchCatalog(activeBranches[0], {
-        mentionBranch: false,
+    return this.renderBusinessCatalog(activeBranches);
+  }
+
+  // Full catalog across every active branch so the agent can talk about services before
+  // the client picks a location.
+  private async renderBusinessCatalog(branches: Branch[]): Promise<string> {
+    if (branches.length === 0) return '';
+
+    if (branches.length === 1) {
+      return this.renderBranchCatalog(branches[0], branches, {
+        singleBranch: true,
       });
     }
 
-    if (activeBranches.length > 1) {
-      return this.renderBranchesOnly(activeBranches);
+    const [allServices, allProfessionals, offersByBranch, assignmentsByBranch] =
+      await Promise.all([
+        this.listServices.execute(),
+        this.listProfessionals.execute(),
+        Promise.all(
+          branches.map(async (branch) => ({
+            branch,
+            offers: await this.listBranchServices.execute(branch.id, true),
+          })),
+        ),
+        Promise.all(
+          branches.map(async (branch) => ({
+            branch,
+            assignments: await this.listBranchProfessionals.execute(
+              branch.id,
+              true,
+            ),
+          })),
+        ),
+      ]);
+
+    const professionalById = new Map(
+      allProfessionals.map((professional) => [professional.id, professional]),
+    );
+    const serviceById = new Map(
+      allServices.map((service) => [service.id, service]),
+    );
+
+    const professionals = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        workingDays: string[];
+        branchNames: string[];
+      }
+    >();
+    for (const { branch, assignments } of assignmentsByBranch) {
+      for (const assignment of assignments) {
+        const professional = professionalById.get(assignment.professionalId);
+        if (!professional || !professional.isActive) continue;
+        const days = describeWorkingDayNames(
+          intersectWeeklyHours(branch.weeklyHours, assignment.weeklyHours),
+        );
+        const existing = professionals.get(professional.id);
+        if (existing) {
+          if (!existing.branchNames.includes(branch.name)) {
+            existing.branchNames.push(branch.name);
+          }
+          for (const day of days) {
+            if (!existing.workingDays.includes(day)) {
+              existing.workingDays.push(day);
+            }
+          }
+        } else {
+          professionals.set(professional.id, {
+            id: professional.id,
+            name: professional.name,
+            workingDays: days,
+            branchNames: [branch.name],
+          });
+        }
+      }
     }
 
-    return '';
-  }
+    const nameById = new Map(
+      [...professionals.values()].map(({ id, name }) => [id, name]),
+    );
 
-  private renderBranchesOnly(branches: Branch[]): string {
+    const services = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        durationMinutes: number;
+        professionalNames: string[];
+        clientChoosesProfessional: boolean;
+        branchNames: string[];
+        keywords: string[];
+      }
+    >();
+    for (const { branch, offers } of offersByBranch) {
+      for (const offer of offers) {
+        const service = serviceById.get(offer.serviceId);
+        if (!service || !service.isActive) continue;
+        const existing = services.get(service.id);
+        if (existing) {
+          if (!existing.branchNames.includes(branch.name)) {
+            existing.branchNames.push(branch.name);
+          }
+        } else {
+          services.set(service.id, {
+            id: service.id,
+            name: service.name,
+            durationMinutes: service.durationMinutes,
+            professionalNames: service.professionalIds
+              .map((id) => nameById.get(id))
+              .filter((name): name is string => name !== undefined),
+            clientChoosesProfessional: service.clientChoosesProfessional,
+            branchNames: [branch.name],
+            keywords: service.keywords ?? [],
+          });
+        }
+      }
+    }
+
     return renderCatalog({
       branches: branches.map((branch) => ({
         id: branch.id,
         name: branch.name,
         address: branch.address,
       })),
-      professionals: [],
-      services: [],
+      professionals: [...professionals.values()],
+      services: [...services.values()],
     });
   }
 
   private async renderBranchCatalog(
     branch: Branch,
-    options: { mentionBranch?: boolean } = {},
+    allBranches: Branch[],
+    options: { singleBranch?: boolean } = {},
   ): Promise<string> {
-    const mentionBranch = options.mentionBranch ?? true;
     const [offers, assignments, services, professionals] = await Promise.all([
       this.listBranchServices.execute(branch.id, true),
       this.listBranchProfessionals.execute(branch.id, true),
@@ -201,7 +306,7 @@ export class AgentPromptComposer {
         return {
           id: professional.id,
           name: professional.name,
-          workingDays: describeWorkingDays(
+          workingDays: describeWorkingDayNames(
             intersectWeeklyHours(branch.weeklyHours, assignment.weeklyHours),
           ),
         };
@@ -226,19 +331,26 @@ export class AgentPromptComposer {
             .map((id) => nameById.get(id))
             .filter((name): name is string => name !== undefined),
           clientChoosesProfessional: service.clientChoosesProfessional,
+          keywords: service.keywords ?? [],
         };
       })
       .filter((row): row is NonNullable<typeof row> => row !== null);
 
     return renderCatalog({
-      branch: mentionBranch
-        ? { name: branch.name, address: branch.address }
-        : undefined,
+      branches: allBranches.map((row) => ({
+        id: row.id,
+        name: row.name,
+        address: row.address,
+      })),
+      singleBranch: options.singleBranch === true || allBranches.length === 1,
+      branch:
+        options.singleBranch || allBranches.length === 1
+          ? undefined
+          : { name: branch.name, address: branch.address },
       professionals: activeProfessionals,
       services: catalogServices,
     });
   }
-
   // Read straight from the schedule on every turn: this is what stops the agent from
   // ratifying a booking it only ever claimed in a previous message.
   private async composeClientState(input: ComposePromptInput): Promise<string> {

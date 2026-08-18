@@ -70,4 +70,78 @@ describe('WhatsAppWebhookController', () => {
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(queue.add).not.toHaveBeenCalled();
   });
+
+  describe('label sync', () => {
+    const withSync = (on: boolean) =>
+      ({
+        ...config,
+        agentPolicy: { humanAttentionLabelSync: on },
+      }) as BusinessConfig;
+
+    it('enqueues a label association when sync is on', async () => {
+      repository.findByEvolutionInstanceNameUnscoped.mockResolvedValue(
+        withSync(true),
+      );
+
+      await controller.handle('shared-secret', {
+        event: 'labels.association',
+        instance: 'nuvi-tenant',
+        apikey: token,
+        data: {
+          type: 'add',
+          chatId: '59170000001@s.whatsapp.net',
+          labelId: '7',
+        },
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        'label-association',
+        {
+          tenantId: 'tenant-id',
+          chatJid: '59170000001@s.whatsapp.net',
+          labelId: '7',
+          action: 'add',
+        },
+        expect.objectContaining({ attempts: 3 }),
+      );
+    });
+
+    it('provisions the label when the instance connects', async () => {
+      repository.findByEvolutionInstanceNameUnscoped.mockResolvedValue(
+        withSync(true),
+      );
+
+      await controller.handle('shared-secret', {
+        event: 'connection.update',
+        instance: 'nuvi-tenant',
+        apikey: token,
+        data: { state: 'open' },
+      });
+
+      expect(queue.add).toHaveBeenCalledWith(
+        'label-ensure',
+        { tenantId: 'tenant-id' },
+        expect.objectContaining({ jobId: 'tenant-id-label-ensure' }),
+      );
+    });
+
+    it('ignores label events when sync is off', async () => {
+      repository.findByEvolutionInstanceNameUnscoped.mockResolvedValue(
+        withSync(false),
+      );
+
+      await controller.handle('shared-secret', {
+        event: 'labels.association',
+        instance: 'nuvi-tenant',
+        apikey: token,
+        data: {
+          type: 'add',
+          chatId: '59170000001@s.whatsapp.net',
+          labelId: '7',
+        },
+      });
+
+      expect(queue.add).not.toHaveBeenCalled();
+    });
+  });
 });

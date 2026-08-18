@@ -87,6 +87,17 @@ export class DrizzleBranchServiceRepository
     return rows.map(BranchServiceMapper.toDomain);
   }
 
+  async findActiveByService(serviceId: string): Promise<BranchService[]> {
+    const rows = await this.selectFrom(
+      branchServices,
+      and(
+        eq(branchServices.serviceId, serviceId),
+        eq(branchServices.isActive, true),
+      ),
+    );
+    return rows.map(BranchServiceMapper.toDomain);
+  }
+
   async deactivate(
     branchId: string,
     serviceId: string,

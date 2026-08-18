@@ -16,6 +16,8 @@ describe('permissionsForRole', () => {
     expect(permissions.has(Permission.TENANTS_ADMIN)).toBe(false);
     expect(permissions.has(Permission.SUBSCRIPTIONS_ADMIN)).toBe(false);
     expect(permissions.has(Permission.BACKFILL_RUN)).toBe(false);
+    expect(permissions.has(Permission.AGENT_TRACES_READ)).toBe(false);
+    expect(permissions.has(Permission.AGENT_TRACES_PRUNE)).toBe(false);
   });
 
   it('limits staff to the operational read/write set', () => {
@@ -37,6 +39,8 @@ describe('permissionsForRole', () => {
     expect(permissions.has(Permission.TENANTS_ADMIN)).toBe(true);
     expect(permissions.has(Permission.SUBSCRIPTIONS_ADMIN)).toBe(true);
     expect(permissions.has(Permission.BACKFILL_RUN)).toBe(true);
+    expect(permissions.has(Permission.AGENT_TRACES_READ)).toBe(true);
+    expect(permissions.has(Permission.AGENT_TRACES_PRUNE)).toBe(true);
     expect(permissions.has(Permission.TENANT_READ)).toBe(false);
     expect(permissions.has(Permission.APPOINTMENTS_READ)).toBe(false);
   });

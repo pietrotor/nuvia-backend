@@ -6,24 +6,33 @@ import {
   AvailabilityReason,
   FindAvailabilityOptionsUseCase,
   PreferredDiagnosis,
+  SlotOption,
 } from '@application/appointments/use-cases/find-availability-options.use-case';
 import { SlotUnavailableError } from '@domain/appointments/exceptions/appointment.exceptions';
-import { FreeWindow } from '@domain/appointments/services/slot-offering';
 import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
 import {
   BranchNotFoundError,
   BranchRequiredError,
+  ProfessionalDoesNotPerformServiceError,
   ProfessionalNotAtBranchError,
   ServiceNotOfferedAtBranchError,
 } from '@domain/branches/exceptions/branch.exceptions';
 import { ProfessionalNotFoundError } from '@domain/professionals/exceptions/professional.exceptions';
 import { ServiceNotFoundError } from '@domain/services/exceptions/service.exceptions';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
+import {
+  AvailabilityDayPart,
+  AvailabilitySegment,
+  buildAvailabilitySegments,
+  filterSlotsByDayPart,
+  summarizeAvailabilityDays,
+} from './availability-presentation';
 import { branchRequiredWarning } from './branch-required.warning';
 import { clockLabel } from './clock-label';
 import {
   asObject,
   optionalIsoDate,
+  optionalString,
   optionalUuid,
   requiredIsoDate,
   requiredUuid,
@@ -31,12 +40,85 @@ import {
 
 const MAX_RANGE_DAYS = 14;
 
+const DAY_PART_LABEL: Record<AvailabilityDayPart, string> = {
+  [AvailabilityDayPart.MORNING]: 'mañana',
+  [AvailabilityDayPart.AFTERNOON]: 'tarde',
+  [AvailabilityDayPart.EVENING]: 'noche',
+};
+
+// Every AvailabilityReason must have a Spanish sentence. A missing key is a TypeScript
+// error — never a silent `default: null` that made the model invent "no está disponible".
+const REASON_DETAIL: Record<
+  AvailabilityReason,
+  (preferred: PreferredDiagnosis, timezone: string) => string | null
+> = {
+  [AvailabilityReason.AVAILABLE]: () => null,
+  [AvailabilityReason.BUSINESS_CLOSED]: () => 'El negocio no atiende ese día.',
+  [AvailabilityReason.PROFESSIONAL_OFF]: () =>
+    'La profesional no trabaja ese día.',
+  [AvailabilityReason.PROFESSIONAL_AT_OTHER_BRANCH]: () =>
+    'Esa profesional atiende en otra sucursal ese día.',
+  [AvailabilityReason.PROFESSIONAL_BLOCKED]: () =>
+    'Esa profesional no está disponible ese día.',
+  [AvailabilityReason.SERVICE_NOT_OFFERED_AT_BRANCH]: () =>
+    'Ese servicio no se ofrece en esta sucursal.',
+  [AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW]: () =>
+    'Esa profesional no ofrece ese servicio en ese horario.',
+  [AvailabilityReason.BEFORE_OPENING]: () => 'Es antes de la hora de apertura.',
+  [AvailabilityReason.SERVICE_DOES_NOT_FIT]: (preferred, timezone) =>
+    preferred.lastStartThatFits
+      ? `Ese tratamiento ya no entra antes del cierre. La última hora de inicio posible ese día es ${clockLabel(preferred.lastStartThatFits, timezone)}.`
+      : 'Ese tratamiento no entra en el horario de ese día.',
+  [AvailabilityReason.TOO_SOON]: (preferred) =>
+    `El negocio necesita ${preferred.leadTimeHours} horas de anticipación para reservar.`,
+  [AvailabilityReason.TAKEN]: (preferred, timezone) =>
+    takenDetail(preferred, timezone),
+  [AvailabilityReason.FULLY_BOOKED]: () => 'Ese día ya está completo.',
+};
+
+function takenDetail(preferred: PreferredDiagnosis, timezone: string): string {
+  const parts = ['Esa hora ya está ocupada.'];
+  if (preferred.lastStartBefore) {
+    parts.push(
+      `Podés empezar hasta las ${clockLabel(preferred.lastStartBefore, timezone)}.`,
+    );
+  }
+  if (preferred.firstStartAfter) {
+    parts.push(
+      `La próxima libre es a las ${clockLabel(preferred.firstStartAfter, timezone)}.`,
+    );
+  }
+  return parts.join(' ');
+}
+
+// Day-level reasons share the same sentences, without the preferred-hour extras.
+const DAY_REASON_DETAIL: Record<AvailabilityReason, string> = {
+  [AvailabilityReason.AVAILABLE]: 'Hay horarios libres.',
+  [AvailabilityReason.BUSINESS_CLOSED]: 'El negocio no atiende ese día.',
+  [AvailabilityReason.PROFESSIONAL_OFF]: 'La profesional no trabaja ese día.',
+  [AvailabilityReason.PROFESSIONAL_AT_OTHER_BRANCH]:
+    'Esa profesional atiende en otra sucursal ese día.',
+  [AvailabilityReason.PROFESSIONAL_BLOCKED]:
+    'Esa profesional no está disponible ese día.',
+  [AvailabilityReason.SERVICE_NOT_OFFERED_AT_BRANCH]:
+    'Ese servicio no se ofrece en esta sucursal.',
+  [AvailabilityReason.SERVICE_OUTSIDE_OFFER_WINDOW]:
+    'Esa profesional no ofrece ese servicio en ese horario.',
+  [AvailabilityReason.BEFORE_OPENING]: 'Es antes de la hora de apertura.',
+  [AvailabilityReason.SERVICE_DOES_NOT_FIT]:
+    'Ese tratamiento no entra en el horario de ese día.',
+  [AvailabilityReason.TOO_SOON]:
+    'Todavía no se puede reservar ese día: hace falta más anticipación.',
+  [AvailabilityReason.TAKEN]: 'Ese día ya tiene horarios ocupados.',
+  [AvailabilityReason.FULLY_BOOKED]: 'Ese día ya está completo.',
+};
+
 @Injectable()
 export class FindAvailabilityAgentTool implements AgentTool {
   readonly definition = {
     name: 'find_availability',
     description:
-      'Busca horarios reales para un servicio en la sucursal de la conversación. Es la única fuente de horarios: los únicos que podés nombrar son los que devuelve. Dice si la hora pedida está libre y por qué no, unas pocas alternativas concretas para ofrecer, las franjas libres de cada día con su última hora de inicio, los días sin atención y, si no hay nada, el próximo hueco real.',
+      'Busca disponibilidad real para un servicio con detalle progresivo: días y franjas para búsquedas amplias, rangos u horas para un día, y diagnóstico para una hora exacta. Sin sucursal fijada, busca en todas. Única fuente de horarios: solo podés nombrar los que devuelve.',
     parameters: {
       type: 'object',
       additionalProperties: false,
@@ -45,23 +127,27 @@ export class FindAvailabilityAgentTool implements AgentTool {
         serviceId: { type: 'string', description: 'UUID del servicio' },
         professionalId: {
           type: 'string',
-          description:
-            'UUID del profesional. Omitilo para buscar en todas las que hacen el servicio',
+          description: 'UUID del profesional; omití para buscar en todas',
         },
         preferredAt: {
           type: 'string',
           description:
-            'La hora exacta que pidió la clienta, ISO 8601 con offset del negocio. Pasala siempre que la haya dicho: es lo que permite explicar por qué no y ordenar las alternativas',
+            'Hora exacta pedida por la clienta, ISO 8601 con offset del negocio',
+        },
+        dayPart: {
+          type: 'string',
+          enum: Object.values(AvailabilityDayPart),
+          description:
+            'Franja pedida: morning antes de 12:00, afternoon de 12:00 a 17:59, evening desde 18:00',
         },
         from: {
           type: 'string',
-          description:
-            'Inicio del rango, ISO 8601 con offset de la zona horaria del negocio (por ejemplo 2026-08-09T00:00:00-04:00)',
+          description: 'Inicio del rango, ISO 8601 con offset del negocio',
         },
         to: {
           type: 'string',
           description:
-            'Fin del rango, ISO 8601 con offset de la zona horaria del negocio. Máximo 14 días después de "from"',
+            'Fin del rango, ISO 8601; máximo 14 días después de from',
         },
       },
     },
@@ -86,12 +172,14 @@ export class FindAvailabilityAgentTool implements AgentTool {
     }
 
     const preferredAt = optionalIsoDate(values, 'preferredAt');
+    const professionalId = optionalUuid(values, 'professionalId');
+    const dayPart = this.dayPart(optionalString(values, 'dayPart'));
 
     let result: AvailabilityOptions;
     try {
       result = await this.findOptions.execute({
         serviceId: requiredUuid(values, 'serviceId'),
-        professionalId: optionalUuid(values, 'professionalId'),
+        professionalId,
         branchId: context.branchId ?? undefined,
         preferredAt: preferredAt ? new Date(preferredAt) : undefined,
         from: new Date(from),
@@ -104,18 +192,42 @@ export class FindAvailabilityAgentTool implements AgentTool {
       }
       // A combination that cannot be booked is an answer, not a failure: told apart from a
       // crash, the agent can explain it instead of improvising its own schedule.
-      const reason = this.explain(error);
+      const reason = this.explain(error, !!professionalId);
       if (!reason) throw error;
       return {
         status: 'warning',
         summary: reason,
         nextActions: [
-          'Decirlo con honestidad y ofrecer otra profesional u otro servicio.',
+          professionalId
+            ? 'Decirlo con honestidad y ofrecer otra profesional u otro servicio.'
+            : 'Decirlo con honestidad y ofrecer otro servicio.',
         ],
       };
     }
 
     const timezone = context.timezone;
+    if (result.preferred) {
+      return this.preferredResult(result, timezone);
+    }
+
+    const matchingSlots = filterSlotsByDayPart(result.slots, dayPart, timezone);
+    if (this.isSingleLocalDay(new Date(from), new Date(to), timezone)) {
+      return this.dayScheduleResult(
+        result,
+        matchingSlots,
+        dayPart,
+        new Date(from),
+        timezone,
+      );
+    }
+
+    return this.dayChoiceResult(result, matchingSlots, dayPart, timezone);
+  }
+
+  private preferredResult(
+    result: AvailabilityOptions,
+    timezone: string,
+  ): AgentToolResult {
     const sameDay =
       result.options.length > 0 &&
       result.options.every(
@@ -123,26 +235,12 @@ export class FindAvailabilityAgentTool implements AgentTool {
           this.localDay(option.startsAt, timezone) ===
           this.localDay(result.options[0].startsAt, timezone),
       );
-    const availableDays = result.availableDays.map((day) => ({
-      label: this.dayLabel(day.date, timezone),
-      ranges: day.windows.map(
-        (window) =>
-          `${this.timeLabel(window.from, timezone)} a ${this.timeLabel(window.to, timezone)}`,
-      ),
-      // A window ends when the last treatment of the day ends, so its edge is not a time
-      // anyone can book. Without this the model works the last start out on its own and
-      // gets it wrong.
-      lastStart: this.timeLabel(
-        this.lastStart(day.windows, result.service.durationMinutes),
-        timezone,
-      ),
-    }));
-
     return {
       status: 'success',
       summary: this.summarize(result),
-      offerableTimes: this.offerableTimes(result, availableDays, timezone),
+      offerableTimes: this.preferredOfferableTimes(result, timezone),
       data: {
+        mode: 'resolve_exact_time',
         preferred: result.preferred
           ? {
               label: this.label(result.preferred.at, timezone),
@@ -150,10 +248,14 @@ export class FindAvailabilityAgentTool implements AgentTool {
               reason: result.preferred.reason,
               detail: this.detail(result.preferred, timezone),
               professionalName: result.preferred.professionalName,
+              lastStartBefore: result.preferred.lastStartBefore
+                ? this.timeLabel(result.preferred.lastStartBefore, timezone)
+                : null,
+              firstStartAfter: result.preferred.firstStartAfter
+                ? this.timeLabel(result.preferred.firstStartAfter, timezone)
+                : null,
             }
           : null,
-        // When every offer is the same local day, the date lives once at the top so each
-        // option is just the clock time the client needs to pick.
         dayLabel: sameDay
           ? this.dayLabel(result.options[0].startsAt, timezone)
           : null,
@@ -164,11 +266,13 @@ export class FindAvailabilityAgentTool implements AgentTool {
             : this.label(option.startsAt, timezone),
           professionalId: option.professionalId,
           professionalName: option.professionalName,
+          branchId: option.branchId,
+          branchName: option.branchName,
         })),
-        availableDays,
         unavailableDays: result.unavailableDays.map((day) => ({
           label: this.dayLabel(day.date, timezone),
           reason: day.reason,
+          detail: DAY_REASON_DETAIL[day.reason],
         })),
         nextAvailable: result.nextAvailable
           ? {
@@ -176,6 +280,8 @@ export class FindAvailabilityAgentTool implements AgentTool {
               label: this.label(result.nextAvailable.startsAt, timezone),
               professionalId: result.nextAvailable.professionalId,
               professionalName: result.nextAvailable.professionalName,
+              branchId: result.nextAvailable.branchId,
+              branchName: result.nextAvailable.branchName,
               daysAway: result.nextAvailable.daysAway,
             }
           : null,
@@ -185,35 +291,244 @@ export class FindAvailabilityAgentTool implements AgentTool {
     };
   }
 
-  // Every time this answer authorises the agent to say. Anything else it writes is
-  // something it made up, and the orchestrator sends it back before the client sees it.
-  private offerableTimes(
+  private dayChoiceResult(
     result: AvailabilityOptions,
-    availableDays: ReadonlyArray<{ ranges: string[]; lastStart: string }>,
+    slots: readonly SlotOption[],
+    dayPart: AvailabilityDayPart | undefined,
+    timezone: string,
+  ): AgentToolResult {
+    const fallbackSlots = filterSlotsByDayPart(
+      result.options,
+      dayPart,
+      timezone,
+    );
+    const days = this.daySummaries(
+      slots.length ? slots : fallbackSlots,
+      timezone,
+    );
+    const nextAvailable = days.length
+      ? null
+      : this.nextAvailableData(result, timezone);
+
+    return {
+      status: 'success',
+      summary: days.length
+        ? `${days.length} día(s) con disponibilidad${dayPart ? ` en la ${DAY_PART_LABEL[dayPart]}` : ''}.`
+        : dayPart
+          ? `No hay horarios en la ${DAY_PART_LABEL[dayPart]} dentro del rango pedido.`
+          : this.summarize(result),
+      offerableTimes: nextAvailable ? [nextAvailable.label] : [],
+      data: {
+        mode: 'choose_day_and_period',
+        requestedPeriod: dayPart ? DAY_PART_LABEL[dayPart] : null,
+        days,
+        unavailableDays: result.unavailableDays.map((day) => ({
+          label: this.dayLabel(day.date, timezone),
+          reason: day.reason,
+          detail: DAY_REASON_DETAIL[day.reason],
+        })),
+        nextAvailable,
+        clientChoosesProfessional: result.service.clientChoosesProfessional,
+      },
+      nextActions: this.withProfessionalGuidance(
+        days.length
+          ? [
+              dayPart
+                ? 'Mostrá solo los días y preguntá cuál prefiere; no nombres horas todavía.'
+                : 'Mostrá los días con sus franjas y preguntá qué día y franja prefiere; no nombres horas todavía.',
+            ]
+          : [
+              nextAvailable
+                ? `No hay disponibilidad en el rango: ofrecé nextAvailable, que está en ${nextAvailable.daysAway} días.`
+                : 'No hay disponibilidad cercana: decilo y derivá.',
+            ],
+        result,
+      ),
+    };
+  }
+
+  private dayScheduleResult(
+    result: AvailabilityOptions,
+    slots: readonly SlotOption[],
+    dayPart: AvailabilityDayPart | undefined,
+    requestedAt: Date,
+    timezone: string,
+  ): AgentToolResult {
+    const segments = buildAvailabilitySegments(slots);
+    const segmentData = segments.map((segment) =>
+      this.segmentData(segment, timezone),
+    );
+    const otherPeriods = summarizeAvailabilityDays(
+      result.slots,
+      timezone,
+    ).flatMap((day) => day.dayParts);
+    const alternativeDays =
+      segments.length === 0
+        ? this.daySummaries(
+            filterSlotsByDayPart(result.options, dayPart, timezone),
+            timezone,
+          ).filter((day) => day.label !== this.dayLabel(requestedAt, timezone))
+        : [];
+    const nextAvailable =
+      segments.length === 0 && !dayPart
+        ? this.nextAvailableData(result, timezone)
+        : null;
+
+    return {
+      status: 'success',
+      summary: segments.length
+        ? `${segments.length} bloque(s) de horarios libres el ${this.dayLabel(requestedAt, timezone)}.`
+        : dayPart
+          ? `No hay horarios en la ${DAY_PART_LABEL[dayPart]} ese día.`
+          : this.summarize(result),
+      offerableTimes: [
+        ...this.segmentOfferableTimes(segments, timezone),
+        ...(nextAvailable ? [nextAvailable.label] : []),
+      ],
+      data: {
+        mode: 'show_day_schedule',
+        dayLabel: this.dayLabel(requestedAt, timezone),
+        requestedPeriod: dayPart ? DAY_PART_LABEL[dayPart] : null,
+        segments: segmentData,
+        availableOtherPeriods:
+          segments.length === 0 && dayPart
+            ? [
+                ...new Set(
+                  otherPeriods
+                    .filter((part) => part !== dayPart)
+                    .map((part) => DAY_PART_LABEL[part]),
+                ),
+              ]
+            : [],
+        alternativeDays,
+        unavailableDays: result.unavailableDays.map((day) => ({
+          label: this.dayLabel(day.date, timezone),
+          reason: day.reason,
+          detail: DAY_REASON_DETAIL[day.reason],
+        })),
+        nextAvailable,
+        clientChoosesProfessional: result.service.clientChoosesProfessional,
+      },
+      nextActions: this.withProfessionalGuidance(
+        segments.length
+          ? [
+              'Mostrá todos los segments tal cual: los rangos como rangos y las horas aisladas como horas. No agregues options.',
+              'Cuando la clienta elija una hora, volvé a consultar con preferredAt antes de reservar.',
+            ]
+          : dayPart && otherPeriods.length
+            ? [
+                'Decí que esa franja no tiene lugar y ofrecé las otras franjas del día.',
+              ]
+            : alternativeDays.length
+              ? [
+                  'Ese día no tiene lugar: ofrecé los días y franjas de alternativeDays sin nombrar horas.',
+                ]
+              : [
+                  nextAvailable
+                    ? `Ese día no tiene lugar: ofrecé nextAvailable, que está en ${nextAvailable.daysAway} días.`
+                    : 'Ese día no tiene lugar: pedí otra fecha.',
+                ],
+        result,
+      ),
+    };
+  }
+
+  private daySummaries(
+    slots: readonly SlotOption[],
+    timezone: string,
+  ): { label: string; periods: string[] }[] {
+    return summarizeAvailabilityDays(slots, timezone).map((day) => ({
+      label: this.dayLabel(day.date, timezone),
+      periods: day.dayParts.map((part) => DAY_PART_LABEL[part]),
+    }));
+  }
+
+  private preferredOfferableTimes(
+    result: AvailabilityOptions,
     timezone: string,
   ): string[] {
     return [
       ...result.options.map((option) =>
         this.timeLabel(option.startsAt, timezone),
       ),
-      ...availableDays.flatMap((day) => [...day.ranges, day.lastStart]),
       ...(result.preferred
         ? [this.timeLabel(result.preferred.at, timezone)]
         : []),
       ...(result.preferred?.lastStartThatFits
         ? [this.timeLabel(result.preferred.lastStartThatFits, timezone)]
         : []),
-      ...(result.nextAvailable
-        ? [this.timeLabel(result.nextAvailable.startsAt, timezone)]
+      ...(result.preferred?.lastStartBefore
+        ? [this.timeLabel(result.preferred.lastStartBefore, timezone)]
+        : []),
+      ...(result.preferred?.firstStartAfter
+        ? [this.timeLabel(result.preferred.firstStartAfter, timezone)]
         : []),
     ];
   }
 
-  // A free window ends when the last treatment of the day ends, so the last start that can
-  // still be booked sits one treatment before that edge.
-  private lastStart(windows: FreeWindow[], durationMinutes: number): Date {
-    const last = windows[windows.length - 1];
-    return new Date(last.to.getTime() - durationMinutes * 60_000);
+  private segmentData(
+    segment: AvailabilitySegment,
+    timezone: string,
+  ): Record<string, unknown> {
+    if (segment.kind === 'range') {
+      return {
+        kind: segment.kind,
+        label: `se puede empezar entre ${this.timeLabel(segment.firstStart.startsAt, timezone)} y ${this.timeLabel(segment.lastStart.startsAt, timezone)}`,
+        from: this.timeLabel(segment.firstStart.startsAt, timezone),
+        to: this.timeLabel(segment.lastStart.startsAt, timezone),
+      };
+    }
+
+    return {
+      kind: segment.kind,
+      times: segment.slots.map((slot) => ({
+        startsAt: slot.startsAt.toISOString(),
+        label: this.timeLabel(slot.startsAt, timezone),
+        professionalId: slot.professionalId,
+        professionalName: slot.professionalName,
+        branchId: slot.branchId,
+        branchName: slot.branchName,
+      })),
+    };
+  }
+
+  private segmentOfferableTimes(
+    segments: readonly AvailabilitySegment[],
+    timezone: string,
+  ): string[] {
+    return segments.flatMap((segment) =>
+      segment.kind === 'range'
+        ? [
+            this.timeLabel(segment.firstStart.startsAt, timezone),
+            this.timeLabel(segment.lastStart.startsAt, timezone),
+          ]
+        : segment.slots.map((slot) => this.timeLabel(slot.startsAt, timezone)),
+    );
+  }
+
+  private nextAvailableData(
+    result: AvailabilityOptions,
+    timezone: string,
+  ): {
+    startsAt: string;
+    label: string;
+    professionalId: string;
+    professionalName: string;
+    branchId?: string;
+    branchName?: string;
+    daysAway: number;
+  } | null {
+    return result.nextAvailable
+      ? {
+          startsAt: result.nextAvailable.startsAt.toISOString(),
+          label: this.label(result.nextAvailable.startsAt, timezone),
+          professionalId: result.nextAvailable.professionalId,
+          professionalName: result.nextAvailable.professionalName,
+          branchId: result.nextAvailable.branchId,
+          branchName: result.nextAvailable.branchName,
+          daysAway: result.nextAvailable.daysAway,
+        }
+      : null;
   }
 
   private summarize(result: AvailabilityOptions): string {
@@ -239,64 +554,71 @@ export class FindAvailabilityAgentTool implements AgentTool {
 
     if (result.preferred && !result.preferred.available) {
       actions.push(
-        'Decir el motivo concreto que viene en preferred.reason y preferred.detail, no un "no hay disponibilidad" genérico.',
+        'Explicá preferred.reason/detail y ofrecé lastStartBefore/firstStartAfter si vienen.',
       );
-    }
-    if (!result.preferred && result.availableDays.length) {
+    } else if (!result.preferred && result.availableDays.length) {
       actions.push(
-        'Describir el día con las franjas de "availableDays" y ofrecer solo los horarios de "options", que son pocos a propósito. Una franja dice hasta cuándo hay lugar, no es una lista: no la desgloses en horarios.',
+        'Usá availableDays para la franja y options para horarios concretos; no desgloses franjas.',
       );
     } else if (result.options.length) {
-      actions.push(
-        'Ofrecer solo los horarios de "options", tal cual vienen. No completes con horarios propios.',
-      );
+      actions.push('Ofrecé solo options; no inventes horarios.');
     } else if (result.nextAvailable) {
       actions.push(
-        `No hay nada cerca: decir que el primer hueco es ${result.nextAvailable.professionalName} en ${result.nextAvailable.daysAway} días y preguntar si le sirve.`,
+        `Sin hueco cerca: el próximo es ${result.nextAvailable.professionalName} en ${result.nextAvailable.daysAway} días.`,
       );
     } else {
-      actions.push(
-        'No hay ningún horario en los próximos 90 días: decilo con honestidad y derivá al equipo.',
-      );
+      actions.push('Sin horarios en 90 días: decilo y derivá.');
     }
     if (!result.service.clientChoosesProfessional) {
-      actions.push(
-        'Este servicio no ofrece elegir profesional: no preguntes con quién, asigná la que aparece en la opción.',
-      );
+      actions.push('No preguntar profesional; usá la de la opción.');
+    }
+    const branchNames = [
+      ...new Set(
+        result.options
+          .map((option) => option.branchName)
+          .filter((name): name is string => !!name),
+      ),
+    ];
+    if (branchNames.length > 1) {
+      actions.push('Nombrá la sucursal de cada horario.');
+    } else if (branchNames.length === 1) {
+      actions.push(`Horarios en ${branchNames[0]}.`);
     }
 
     return actions;
   }
 
-  // The sentence the agent needs is in the reason plus one concrete fact: the last start
-  // that still fits, or how much notice the business needs.
+  private withProfessionalGuidance(
+    actions: string[],
+    result: AvailabilityOptions,
+  ): string[] {
+    return result.service.clientChoosesProfessional
+      ? actions
+      : [
+          ...actions,
+          'No preguntar profesional; se define al verificar la hora.',
+        ];
+  }
+
   private detail(
     preferred: PreferredDiagnosis,
     timezone: string,
   ): string | null {
-    switch (preferred.reason) {
-      case AvailabilityReason.SERVICE_DOES_NOT_FIT:
-        return preferred.lastStartThatFits
-          ? `Ese tratamiento ya no entra antes del cierre. La última hora de inicio posible ese día es ${this.timeLabel(preferred.lastStartThatFits, timezone)}.`
-          : 'Ese tratamiento no entra en el horario de ese día.';
-      case AvailabilityReason.TOO_SOON:
-        return `El negocio necesita ${preferred.leadTimeHours} horas de anticipación para reservar.`;
-      case AvailabilityReason.BUSINESS_CLOSED:
-        return 'El negocio no atiende ese día.';
-      case AvailabilityReason.PROFESSIONAL_OFF:
-        return 'La profesional no trabaja ese día.';
-      case AvailabilityReason.BEFORE_OPENING:
-        return 'Es antes de la hora de apertura.';
-      case AvailabilityReason.TAKEN:
-        return 'Ese horario ya está ocupado.';
-      default:
-        return null;
-    }
+    return REASON_DETAIL[preferred.reason](preferred, timezone);
   }
 
-  private explain(error: unknown): string | null {
+  // Nobody named a professional when `professionalNamed` is false, so a sentence about
+  // "esa profesional" would invent a request the client never made.
+  private explain(error: unknown, professionalNamed: boolean): string | null {
+    if (error instanceof ProfessionalDoesNotPerformServiceError) {
+      return professionalNamed
+        ? 'Esa profesional no realiza ese servicio.'
+        : 'Ahora mismo no hay ninguna profesional activa que realice ese servicio.';
+    }
     if (error instanceof SlotUnavailableError) {
-      return 'Esa profesional no realiza ese servicio, o alguno de los dos está inactivo.';
+      return professionalNamed
+        ? 'Esa profesional no realiza ese servicio, o alguno de los dos está inactivo.'
+        : 'Ahora mismo no hay ninguna profesional activa que realice ese servicio.';
     }
     if (error instanceof ProfessionalNotFoundError) {
       return 'No existe esa profesional.';
@@ -326,6 +648,23 @@ export class FindAvailabilityAgentTool implements AgentTool {
 
   private timeLabel(at: Date, timezone: string): string {
     return clockLabel(at, timezone);
+  }
+
+  private dayPart(value: string | undefined): AvailabilityDayPart | undefined {
+    if (value === undefined) return undefined;
+    if (
+      !Object.values(AvailabilityDayPart).includes(value as AvailabilityDayPart)
+    ) {
+      throw new Error('dayPart must be morning, afternoon, or evening');
+    }
+    return value as AvailabilityDayPart;
+  }
+
+  private isSingleLocalDay(from: Date, to: Date, timezone: string): boolean {
+    const finalInstant = new Date(Math.max(from.getTime(), to.getTime() - 1));
+    return (
+      this.localDay(from, timezone) === this.localDay(finalInstant, timezone)
+    );
   }
 
   private localDay(at: Date, timezone: string): string {

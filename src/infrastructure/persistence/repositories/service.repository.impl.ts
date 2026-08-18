@@ -36,6 +36,8 @@ export class DrizzleServiceRepository
           .values({
             tenantId,
             name: data.name,
+            description: data.description ?? null,
+            keywords: data.keywords ?? [],
             durationMinutes: data.durationMinutes,
             currency: data.currency,
             price: data.price,

@@ -25,6 +25,29 @@ export class CreateServiceDto {
   @MaxLength(255)
   name: string;
 
+  @ApiProperty({
+    required: false,
+    nullable: true,
+    description: 'Optional description shown to the agent for matching',
+  })
+  @IsOptional()
+  @IsString()
+  @MaxLength(2000)
+  description?: string | null;
+
+  @ApiProperty({
+    type: [String],
+    required: false,
+    description:
+      'Alternate names a client might use (e.g. masaje chino, descontracturante)',
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayUnique()
+  @IsString({ each: true })
+  @MaxLength(80, { each: true })
+  keywords?: string[];
+
   @ApiProperty({ example: 60 })
   @IsInt()
   @Min(1)

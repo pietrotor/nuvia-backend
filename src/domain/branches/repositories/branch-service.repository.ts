@@ -17,6 +17,7 @@ export interface BranchServiceRepository {
   ): Promise<BranchService | null>;
   findByBranch(branchId: string): Promise<BranchService[]>;
   findActiveByBranch(branchId: string): Promise<BranchService[]>;
+  findActiveByService(serviceId: string): Promise<BranchService[]>;
   deactivate(
     branchId: string,
     serviceId: string,

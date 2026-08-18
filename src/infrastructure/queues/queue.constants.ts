@@ -4,3 +4,11 @@ export const INBOUND_MESSAGES_QUEUE = 'inbound-messages';
 // own, held back long enough for the rest of the burst to land (`replyDebounceMs`).
 export const INBOUND_MESSAGE_JOB = 'inbound';
 export const CONVERSATION_REPLY_JOB = 'reply';
+
+// The owner toggled the human-attention label from her phone: pause/resume the
+// bot to match. Kept off the webhook request path like every other side effect.
+export const LABEL_ASSOCIATION_JOB = 'label-association';
+
+// The instance just connected: find-or-create the human-attention label so it
+// exists before the first handoff needs it.
+export const LABEL_ENSURE_JOB = 'label-ensure';

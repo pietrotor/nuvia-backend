@@ -14,7 +14,7 @@ export class SetBranchAgentTool implements AgentTool {
   readonly definition = {
     name: 'set_branch',
     description:
-      'Fija la sucursal de esta conversación luego de que la clienta elija una. Obligatorio antes de precios, horarios o reservas cuando hay más de una sucursal.',
+      'Fija la sucursal de esta conversación cuando la clienta ya eligió dónde atenderse (al reservar, o si pide dirección de un local concreto). No la pidas al inicio.',
     parameters: {
       type: 'object',
       additionalProperties: false,

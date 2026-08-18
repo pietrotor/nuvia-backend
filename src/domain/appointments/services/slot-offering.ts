@@ -1,12 +1,15 @@
 import { DateTime } from 'luxon';
 
 export interface FreeWindow {
-  from: Date;
-  to: Date;
+  // Bookable start range: the client can begin between these two clock times inclusive.
+  firstStart: Date;
+  lastStart: Date;
 }
 
-// Contiguous or overlapping starts become one stretch the client can read as "de 9 a 12".
-// A booking that removes the middle of the day splits the window there.
+// Contiguous or overlapping starts become one stretch the client can read as
+// "podés empezar entre 9 y 11". A booking that removes the middle of the day splits
+// the window there. We merge by treatment occupancy, then expose start bounds only —
+// the occupancy end is never a bookable hour.
 export function mergeFreeWindows(
   slots: ReadonlyArray<{ startsAt: Date }>,
   durationMinutes: number,
@@ -20,10 +23,9 @@ export function mergeFreeWindows(
     new Date(start.getTime() + durationMinutes * 60_000);
 
   const windows: FreeWindow[] = [];
-  let current: FreeWindow = {
-    from: ordered[0].startsAt,
-    to: endOf(ordered[0].startsAt),
-  };
+  let firstStart = ordered[0].startsAt;
+  let lastStart = ordered[0].startsAt;
+  let occupancyEnd = endOf(ordered[0].startsAt);
 
   for (let i = 1; i < ordered.length; i += 1) {
     const nextStart = ordered[i].startsAt;
@@ -31,16 +33,19 @@ export function mergeFreeWindows(
     // Contiguous when the next start falls inside or right at the end of the current
     // window: a 15-minute grid for a 60-minute service overlaps heavily, and that is
     // still one free stretch.
-    if (nextStart.getTime() <= current.to.getTime()) {
-      if (nextEnd > current.to) current = { ...current, to: nextEnd };
+    if (nextStart.getTime() <= occupancyEnd.getTime()) {
+      if (nextStart > lastStart) lastStart = nextStart;
+      if (nextEnd > occupancyEnd) occupancyEnd = nextEnd;
       continue;
     }
 
-    windows.push(current);
-    current = { from: nextStart, to: nextEnd };
+    windows.push({ firstStart, lastStart });
+    firstStart = nextStart;
+    lastStart = nextStart;
+    occupancyEnd = nextEnd;
   }
 
-  windows.push(current);
+  windows.push({ firstStart, lastStart });
   return windows;
 }
 

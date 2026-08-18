@@ -10,6 +10,12 @@ export class MessageResponseDto {
   @ApiProperty()
   id: string;
 
+  @ApiProperty()
+  providerMessageId: string;
+
+  @ApiPropertyOptional({ nullable: true })
+  inReplyToProviderMessageId: string | null;
+
   @ApiProperty({ enum: MessageDirection })
   direction: MessageDirection;
 
@@ -25,6 +31,8 @@ export class MessageResponseDto {
   static from(message: Message): MessageResponseDto {
     return {
       id: message.id,
+      providerMessageId: message.providerMessageId,
+      inReplyToProviderMessageId: message.inReplyToProviderMessageId,
       direction: message.direction,
       kind: message.kind,
       content: message.content,

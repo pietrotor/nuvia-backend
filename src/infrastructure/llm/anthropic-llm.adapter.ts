@@ -4,14 +4,16 @@ import { ConfigService } from '@nestjs/config';
 import {
   LlmChatInput,
   LlmChatResult,
+  LlmFinishReason,
   LlmMessage,
   LlmPort,
   LlmToolCall,
 } from '@domain/agent/ports/llm.port';
 import { ErrorCode, InternalError } from '@domain/common/exceptions';
+import { resolveTemperature } from './llm-sampling';
 
 type AnthropicContentBlock =
-  | { type: 'text'; text: string }
+  | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
   | { type: 'tool_use'; id: string; name: string; input: unknown }
   | {
       type: 'tool_result';
@@ -25,6 +27,14 @@ interface AnthropicMessage {
 }
 
 interface AnthropicResponse {
+  model?: string;
+  stop_reason?: string | null;
+  usage?: {
+    input_tokens?: number;
+    output_tokens?: number;
+    cache_read_input_tokens?: number;
+    cache_creation_input_tokens?: number;
+  };
   content?: (
     | { type: 'text'; text: string }
     | { type: 'tool_use'; id: string; name: string; input: unknown }
@@ -43,6 +53,8 @@ export class AnthropicLlmAdapter implements LlmPort {
       throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED);
     }
 
+    const temperature = resolveTemperature(this.config);
+
     try {
       const response = await fetch(this.messagesUrl(baseUrl), {
         method: 'POST',
@@ -54,10 +66,7 @@ export class AnthropicLlmAdapter implements LlmPort {
         body: JSON.stringify({
           model,
           max_tokens: Number(this.config.get<string>('LLM_MAX_TOKENS', '1024')),
-          system: input.messages
-            .filter((message) => message.role === 'system')
-            .map((message) => message.content)
-            .join('\n\n'),
+          system: this.toSystemBlocks(input.messages),
           messages: this.toAnthropicMessages(
             input.messages.filter((message) => message.role !== 'system'),
           ),
@@ -67,9 +76,9 @@ export class AnthropicLlmAdapter implements LlmPort {
             input_schema: tool.parameters,
           })),
           tool_choice: input.tools?.length
-            ? { type: input.toolChoice ?? 'auto' }
+            ? this.mapToolChoice(input.toolChoice)
             : undefined,
-          temperature: 0.2,
+          ...(temperature == null ? {} : { temperature }),
         }),
         signal: AbortSignal.timeout(25_000),
       });
@@ -82,6 +91,54 @@ export class AnthropicLlmAdapter implements LlmPort {
       if (error instanceof InternalError) throw error;
       throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR);
     }
+  }
+
+  private toSystemBlocks(
+    messages: LlmMessage[],
+  ): string | AnthropicContentBlock[] {
+    const systemMessages = messages.filter(
+      (message) => message.role === 'system',
+    );
+    if (systemMessages.length === 0) return '';
+
+    if (!this.promptCacheEnabled()) {
+      return systemMessages.map((message) => message.content).join('\n\n');
+    }
+
+    return systemMessages.map((message, index) => {
+      const block: AnthropicContentBlock = {
+        type: 'text',
+        text: message.content,
+      };
+      // Cache only the last contiguous cacheable prefix block so volatile text
+      // after it stays outside the breakpoint.
+      const isLastCacheable =
+        message.cacheable === true &&
+        systemMessages
+          .slice(index + 1)
+          .every((next) => next.cacheable !== true);
+      if (message.cacheable === true && isLastCacheable) {
+        block.cache_control = { type: 'ephemeral' };
+      }
+      return block;
+    });
+  }
+
+  private mapToolChoice(
+    toolChoice: LlmChatInput['toolChoice'],
+  ): { type: 'auto' } | { type: 'any' } | { type: 'tool'; name: string } {
+    if (toolChoice == null || toolChoice === 'auto') {
+      return { type: 'auto' };
+    }
+    if (toolChoice === 'any') {
+      return { type: 'any' };
+    }
+    return { type: 'tool', name: toolChoice.name };
+  }
+
+  private promptCacheEnabled(): boolean {
+    const raw = this.config.get<string>('LLM_PROMPT_CACHE', 'true')?.trim();
+    return raw !== 'false' && raw !== '0';
   }
 
   private toAnthropicMessages(messages: LlmMessage[]): AnthropicMessage[] {
@@ -156,7 +213,42 @@ export class AnthropicLlmAdapter implements LlmPort {
         name: block.name,
         arguments: JSON.stringify(block.input),
       }));
-    return { content: text || null, toolCalls };
+    const usage = payload.usage
+      ? {
+          promptTokens: payload.usage.input_tokens ?? 0,
+          completionTokens: payload.usage.output_tokens ?? 0,
+          cachedPromptTokens: payload.usage.cache_read_input_tokens,
+          cacheWriteTokens: payload.usage.cache_creation_input_tokens,
+        }
+      : undefined;
+    return {
+      content: text || null,
+      toolCalls,
+      model: payload.model,
+      usage,
+      finishReason: this.mapFinishReason(payload.stop_reason, toolCalls),
+    };
+  }
+
+  private mapFinishReason(
+    reason: string | null | undefined,
+    toolCalls: LlmToolCall[],
+  ): LlmFinishReason | undefined {
+    if (reason == null) {
+      return toolCalls.length > 0 ? 'tool_calls' : undefined;
+    }
+    switch (reason) {
+      case 'end_turn':
+        return 'stop';
+      case 'tool_use':
+        return 'tool_calls';
+      case 'max_tokens':
+        return 'length';
+      case 'refusal':
+        return 'content_filter';
+      default:
+        return 'other';
+    }
   }
 
   private messagesUrl(baseUrl: string): string {

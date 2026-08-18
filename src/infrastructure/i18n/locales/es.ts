@@ -53,6 +53,7 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.INVALID_APPOINTMENT_TRANSITION]:
     'El estado actual de la cita no permite ese cambio.',
   [ErrorCode.CONVERSATION_NOT_FOUND]: 'No encontramos esa conversación.',
+  [ErrorCode.AGENT_TRACE_NOT_FOUND]: 'No encontramos esa traza del agente.',
   [ErrorCode.PROFESSIONAL_NOT_FOUND]: 'No encontramos esa profesional.',
   [ErrorCode.SERVICE_NOT_FOUND]: 'No encontramos ese servicio.',
   [ErrorCode.BRANCH_NOT_FOUND]: 'No encontramos esa sucursal.',
@@ -62,6 +63,12 @@ export const es: Record<ErrorCode, string> = {
     'Ese servicio no se ofrece en la sucursal elegida.',
   [ErrorCode.PROFESSIONAL_NOT_AT_BRANCH]:
     'Esa profesional no atiende en la sucursal elegida.',
+  [ErrorCode.SERVICE_OFFER_WINDOW_EMPTY]:
+    'Ese horario por servicio no coincide con ningún momento en que la profesional atienda en la sucursal. Ajustá los días u horas.',
+  [ErrorCode.SERVICE_OFFER_WINDOW_NOT_FOUND]:
+    'No hay un horario personalizado para ese servicio en esta sucursal.',
+  [ErrorCode.PROFESSIONAL_DOES_NOT_PERFORM_SERVICE]:
+    'Esa profesional no está asignada a ese servicio en el catálogo.',
   [ErrorCode.CLIENT_NOT_FOUND]: 'No encontramos esa clienta.',
   [ErrorCode.CLIENT_PHONE_ALREADY_REGISTERED]:
     'Ya existe una clienta con el teléfono {phoneE164}.',

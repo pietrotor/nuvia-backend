@@ -5,12 +5,16 @@ import {
   BUSINESS_CONFIG_REPOSITORY,
   BusinessConfigRepository,
 } from '@domain/business-config/repositories/business-config.repository';
-import { ErrorCode, ValidationError } from '@domain/common/exceptions';
 import {
   WHATSAPP_SESSION_PORT,
   WhatsAppSessionPort,
-  WhatsAppSessionStatus,
 } from '@domain/messaging/ports/whatsapp-session.port';
+
+export interface WhatsAppStatusResult {
+  configured: boolean;
+  connected: boolean;
+  phoneNumber?: string;
+}
 
 @Injectable()
 export class GetWhatsAppStatusUseCase {
@@ -21,11 +25,11 @@ export class GetWhatsAppStatusUseCase {
     private readonly whatsappSession: WhatsAppSessionPort,
   ) {}
 
-  async execute(): Promise<WhatsAppSessionStatus> {
+  async execute(): Promise<WhatsAppStatusResult> {
     const config = await this.businessConfigRepository.findByTenant();
     if (!config) throw new BusinessConfigNotFoundError();
     if (!config.evolutionInstanceName) {
-      throw new ValidationError(ErrorCode.WHATSAPP_SESSION_NOT_CONNECTED);
+      return { configured: false, connected: false };
     }
 
     const status = await this.whatsappSession.getStatus(
@@ -36,6 +40,10 @@ export class GetWhatsAppStatusUseCase {
         whatsappPhone: status.phoneNumber,
       });
     }
-    return status;
+    return {
+      configured: true,
+      connected: status.connected,
+      phoneNumber: status.phoneNumber,
+    };
   }
 }

@@ -28,6 +28,7 @@ import {
   MessagingPort,
 } from '@domain/messaging/ports/messaging.port';
 import { SendManualMessageDto } from '../dto/send-manual-message.dto';
+import { ConversationHandoffLabelService } from '../services/conversation-handoff-label.service';
 
 @Injectable()
 export class SendManualMessageUseCase {
@@ -43,6 +44,7 @@ export class SendManualMessageUseCase {
     @Inject(CLOCK_PORT)
     private readonly clock: ClockPort,
     private readonly audit: AuditRecorder,
+    private readonly handoffLabel: ConversationHandoffLabelService,
   ) {}
 
   async execute(
@@ -73,7 +75,7 @@ export class SendManualMessageUseCase {
     if (!message) throw new InternalError(ErrorCode.INTERNAL_ERROR);
 
     // Taking over the conversation pauses the agent: from here on a human replies.
-    await this.conversationRepository.recordManualReply(
+    const paused = await this.conversationRepository.recordManualReply(
       conversation.id,
       sentAt,
     );
@@ -85,6 +87,8 @@ export class SendManualMessageUseCase {
       before: { botPaused: conversation.botPaused },
       after: { botPaused: true },
     });
+
+    await this.handoffLabel.markAttention(paused ?? conversation);
 
     return message;
   }

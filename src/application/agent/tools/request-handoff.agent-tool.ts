@@ -4,6 +4,7 @@ import {
   CONVERSATION_REPOSITORY,
   ConversationRepository,
 } from '@domain/conversations/repositories/conversation.repository';
+import { ConversationHandoffLabelService } from '@application/conversations/services/conversation-handoff-label.service';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
 import { asObject, requiredString } from './tool-input';
 
@@ -24,6 +25,7 @@ export class RequestHandoffAgentTool implements AgentTool {
   constructor(
     @Inject(CONVERSATION_REPOSITORY)
     private readonly conversations: ConversationRepository,
+    private readonly handoffLabel: ConversationHandoffLabelService,
   ) {}
 
   async execute(
@@ -31,7 +33,11 @@ export class RequestHandoffAgentTool implements AgentTool {
     context: AgentContext,
   ): Promise<AgentToolResult> {
     const reason = requiredString(asObject(input), 'reason');
-    await this.conversations.setHandoff(context.conversationId, reason);
+    const conversation = await this.conversations.setHandoff(
+      context.conversationId,
+      reason,
+    );
+    await this.handoffLabel.markAttention(conversation);
     return {
       status: 'success',
       summary: 'Conversación derivada a una persona.',

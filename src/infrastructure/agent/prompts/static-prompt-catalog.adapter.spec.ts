@@ -72,6 +72,44 @@ describe('StaticPromptCatalogAdapter', () => {
     },
   );
 
+  // The agent used to open every conversation asking which branch, and keep asking after
+  // the client had said any of them worked. The rules have to say the branch is optional
+  // and name the one moment it is needed.
+  it.each(categories)(
+    'keeps the branch optional until booking for %s',
+    async (category) => {
+      const { fragments } = await adapter.findFor(criteriaFor(category));
+      const platform = fragments
+        .filter((fragment) => fragment.layer === PromptLayer.PLATFORM)
+        .flatMap((fragment) => fragment.lines)
+        .join('\n');
+
+      expect(platform).toContain('La sucursal es opcional');
+      expect(platform).toContain('No la pidas al inicio de la conversación');
+      expect(platform).toContain('no repitas la pregunta');
+      expect(platform).toContain(
+        'La sucursal se define recién al reservar, y solo si hace falta',
+      );
+    },
+  );
+
+  it('uses progressive disclosure for availability conversations', async () => {
+    const { fragments } = await adapter.findFor(
+      criteriaFor(BusinessCategory.ESTHETICS),
+    );
+    const platform = fragments
+      .filter((fragment) => fragment.layer === PromptLayer.PLATFORM)
+      .flatMap((fragment) => fragment.lines)
+      .join('\n');
+
+    expect(platform).toContain('choose_day_and_period');
+    expect(platform).toContain('qué día y franja prefiere');
+    expect(platform).toContain('show_day_schedule');
+    expect(platform).toContain('un segment "range"');
+    expect(platform).toContain('resolve_exact_time');
+    expect(platform).toContain('"preferredAt" antes de reservar');
+  });
+
   // The channel layer is the only place that says how a message is written, and a reply
   // that reads well on a phone is as much part of the product as a correct booking.
   it('states how a WhatsApp message is formatted, not only what it says', async () => {

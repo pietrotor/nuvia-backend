@@ -74,8 +74,18 @@ function buildOrchestrator(
     { now: jest.fn().mockReturnValue(new Date('2026-08-02T13:00:00Z')) },
     promptComposer,
     { error: jest.fn(), warn: jest.fn() },
+    {
+      save: jest.fn().mockResolvedValue(undefined),
+      findById: jest.fn(),
+      pruneOlderThan: jest.fn(),
+    } as never,
   );
 }
+
+const trigger = {
+  providerMessageId: 'provider-id',
+  text: '¿Qué servicios tienen?',
+};
 
 describe('AgentOrchestrator', () => {
   it('executes typed tools and returns the final assistant response', async () => {
@@ -105,7 +115,9 @@ describe('AgentOrchestrator', () => {
     };
     const orchestrator = buildOrchestrator(llm, tool);
 
-    await expect(orchestrator.respond(history, context)).resolves.toEqual({
+    await expect(
+      orchestrator.respond(history, context, trigger),
+    ).resolves.toEqual({
       text: 'Tenemos limpieza facial a Bs 120.',
       promptFingerprint: 'rev1.esthetics.abcd1234',
       followUps: [],
@@ -160,7 +172,11 @@ describe('AgentOrchestrator', () => {
       }),
     };
 
-    const answer = await buildOrchestrator(llm, tool).respond(history, context);
+    const answer = await buildOrchestrator(llm, tool).respond(
+      history,
+      context,
+      trigger,
+    );
 
     expect(answer.followUps).toEqual([
       { kind: 'deposit_qr', appointmentId: 'ap1' },
@@ -209,6 +225,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
         context,
+        trigger,
       );
 
       expect(llm.chat.mock.calls[0][0].toolChoice).toBe('auto');
@@ -234,6 +251,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
         context,
+        trigger,
       );
 
       expect(book.execute).not.toHaveBeenCalled();
@@ -263,6 +281,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, book).respond(
         history,
         context,
+        trigger,
       );
 
       expect(llm.chat).toHaveBeenCalledTimes(2);
@@ -293,6 +312,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
         context,
+        trigger,
       );
 
       expect(llm.chat).toHaveBeenCalledTimes(3);
@@ -323,6 +343,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
         context,
+        trigger,
       );
 
       expect(handoff.execute).toHaveBeenCalledWith(
@@ -345,7 +366,9 @@ describe('AgentOrchestrator', () => {
     ].join('\n');
     const honest = 'Hoy tengo 09:00, 12:00 o 17:00. ¿Cuál te sirve?';
 
-    function availability(): AgentTool {
+    function availability(
+      offerableTimes = ['09:00', '12:00', '17:00', '09:00 a 18:00'],
+    ): AgentTool {
       return {
         definition: {
           name: 'find_availability',
@@ -355,7 +378,7 @@ describe('AgentOrchestrator', () => {
         execute: jest.fn().mockResolvedValue({
           status: 'success',
           summary: 'Tres horarios.',
-          offerableTimes: ['09:00', '12:00', '17:00', '09:00 a 18:00'],
+          offerableTimes,
         }),
       };
     }
@@ -382,6 +405,7 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, availability()).respond(
         history,
         context,
+        trigger,
       );
 
       expect(answer.text).toBe(honest);
@@ -396,10 +420,29 @@ describe('AgentOrchestrator', () => {
       const answer = await buildOrchestrator(llm, availability()).respond(
         history,
         context,
+        trigger,
       );
 
       expect(answer.text).toBe(honest);
       expect(llm.chat).toHaveBeenCalledTimes(2);
+    });
+
+    it('rejects a concrete option hidden by a displayed range', async () => {
+      const expanded =
+        'Se puede empezar entre 09:00 y 17:00; también tengo 12:00.';
+      const rangeOnly = 'Se puede empezar entre 09:00 y 17:00.';
+      const llm = llmAnswering(expanded, rangeOnly);
+
+      const answer = await buildOrchestrator(
+        llm,
+        availability(['09:00', '17:00']),
+      ).respond(history, context, trigger);
+
+      expect(answer.text).toBe(rangeOnly);
+      expect(llm.chat).toHaveBeenCalledTimes(3);
+      expect(llm.chat.mock.calls[2][0].messages.at(-1)?.content).toContain(
+        '09:00, 17:00',
+      );
     });
 
     it('hands off rather than send a schedule it keeps making up', async () => {
@@ -419,7 +462,7 @@ describe('AgentOrchestrator', () => {
         llm,
         availability(),
         handoff,
-      ).respond(history, context);
+      ).respond(history, context, trigger);
 
       expect(handoff.execute).toHaveBeenCalledWith(
         { reason: 'invented_schedule' },
@@ -427,5 +470,60 @@ describe('AgentOrchestrator', () => {
       );
       expect(answer.text).toBe(AgentOutboundCopy.unverifiedSchedule);
     });
+  });
+
+  it('does not fail the reply when the trace cannot be saved', async () => {
+    const llm: jest.Mocked<LlmPort> = {
+      chat: jest.fn().mockResolvedValue({
+        content: 'Hola',
+        toolCalls: [],
+      }),
+    };
+    const save = jest.fn().mockRejectedValue(new Error('db down'));
+    const getConfig = {
+      execute: jest.fn().mockResolvedValue({
+        tenantId: 'tenant-id',
+        agentName: 'Vale',
+        tone: 'warm',
+      } as BusinessConfig),
+    } as unknown as GetBusinessConfigUseCase;
+    const promptComposer = {
+      compose: jest.fn().mockResolvedValue({
+        staticText: 'Sos Vale.',
+        volatileText: 'Ahora.',
+        fingerprint: 'fp',
+      }),
+    } as unknown as AgentPromptComposer;
+    const logger = { error: jest.fn(), warn: jest.fn() };
+    const orchestrator = new AgentOrchestrator(
+      llm,
+      getConfig,
+      new AgentToolRegistry([]),
+      {
+        findById: jest.fn().mockResolvedValue({ timezone: 'America/La_Paz' }),
+      } as never,
+      {
+        findById: jest.fn().mockResolvedValue({ branchId: null }),
+        setBranch: jest.fn(),
+      } as never,
+      {
+        findActive: jest.fn().mockResolvedValue([{ id: 'branch-1' }]),
+      } as never,
+      { execute: jest.fn().mockResolvedValue([]) } as never,
+      { now: jest.fn().mockReturnValue(new Date('2026-08-02T13:00:00Z')) },
+      promptComposer,
+      logger,
+      { save, findById: jest.fn(), pruneOlderThan: jest.fn() } as never,
+    );
+
+    await expect(
+      orchestrator.respond(history, context, trigger),
+    ).resolves.toEqual({
+      text: 'Hola',
+      promptFingerprint: 'fp',
+      followUps: [],
+    });
+    expect(save).toHaveBeenCalled();
+    expect(logger.error).toHaveBeenCalled();
   });
 });

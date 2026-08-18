@@ -6,6 +6,7 @@ import { BookingActor } from '@domain/appointments/value-objects/booking-actor.v
 import { Branch } from '@domain/branches/entities/branch.entity';
 import { BranchProfessional } from '@domain/branches/entities/branch-professional.entity';
 import {
+  ProfessionalDoesNotPerformServiceError,
   ProfessionalNotAtBranchError,
   ServiceNotOfferedAtBranchError,
 } from '@domain/branches/exceptions/branch.exceptions';
@@ -13,6 +14,10 @@ import {
   BRANCH_PROFESSIONAL_REPOSITORY,
   BranchProfessionalRepository,
 } from '@domain/branches/repositories/branch-professional.repository';
+import {
+  BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY,
+  BranchProfessionalServiceWindowRepository,
+} from '@domain/branches/repositories/branch-professional-service-window.repository';
 import {
   BRANCH_SERVICE_REPOSITORY,
   BranchServiceRepository,
@@ -59,6 +64,8 @@ export interface ScheduleContext {
   config: BusinessConfig;
   timezone: string;
   weeklyHours: WeeklyHours;
+  /** Present when an active service offer window further restricts the schedule. */
+  serviceWindowHours: WeeklyHours | null;
   earliestStartAt: Date;
 }
 
@@ -78,6 +85,8 @@ export class ScheduleContextResolver {
     private readonly branchServiceRepository: BranchServiceRepository,
     @Inject(BRANCH_PROFESSIONAL_REPOSITORY)
     private readonly branchProfessionalRepository: BranchProfessionalRepository,
+    @Inject(BRANCH_PROFESSIONAL_SERVICE_WINDOW_REPOSITORY)
+    private readonly serviceWindowRepository: BranchProfessionalServiceWindowRepository,
     @Inject(BUSINESS_CONFIG_REPOSITORY)
     private readonly businessConfigRepository: BusinessConfigRepository,
     @Inject(TENANT_REPOSITORY)
@@ -107,26 +116,36 @@ export class ScheduleContextResolver {
     if (!service) throw new ServiceNotFoundError(input.serviceId);
     if (!config) throw new BusinessConfigNotFoundError();
 
-    // A deactivated service or professional, or a combination the business does
-    // not offer, simply has no schedule.
-    if (
-      !professional.isActive ||
-      !service.isActive ||
-      !service.professionalIds.includes(professional.id)
-    ) {
+    // A deactivated service or professional simply has no schedule.
+    if (!professional.isActive || !service.isActive) {
       throw new SlotUnavailableError();
     }
 
-    const [branchService, branchProfessional] = await Promise.all([
-      this.branchServiceRepository.findByBranchAndService(
-        branch.id,
-        service.id,
-      ),
-      this.branchProfessionalRepository.findByBranchAndProfessional(
-        branch.id,
+    /* A pairing the catalogue does not have is not an hour that got taken: naming it says
+     * which of the two to change, and lets the panel keep it from being tried at all. */
+    if (!service.professionalIds.includes(professional.id)) {
+      throw new ProfessionalDoesNotPerformServiceError(
         professional.id,
-      ),
-    ]);
+        service.id,
+      );
+    }
+
+    const [branchService, branchProfessional, serviceWindow] =
+      await Promise.all([
+        this.branchServiceRepository.findByBranchAndService(
+          branch.id,
+          service.id,
+        ),
+        this.branchProfessionalRepository.findByBranchAndProfessional(
+          branch.id,
+          professional.id,
+        ),
+        this.serviceWindowRepository.findActiveByAssignmentAndService(
+          branch.id,
+          professional.id,
+          service.id,
+        ),
+      ]);
 
     if (!branchService || !branchService.isActive) {
       throw new ServiceNotOfferedAtBranchError(service.id, branch.id);
@@ -134,6 +153,15 @@ export class ScheduleContextResolver {
     if (!branchProfessional || !branchProfessional.isActive) {
       throw new ProfessionalNotAtBranchError(professional.id, branch.id);
     }
+
+    const baseHours = intersectWeeklyHours(
+      branch.weeklyHours,
+      branchProfessional.weeklyHours,
+    );
+    const serviceWindowHours = serviceWindow?.weeklyHours ?? null;
+    const weeklyHours = serviceWindowHours
+      ? intersectWeeklyHours(baseHours, serviceWindowHours)
+      : baseHours;
 
     return {
       branch,
@@ -143,10 +171,8 @@ export class ScheduleContextResolver {
       branchProfessional,
       config,
       timezone: await this.timezoneFor(branch, config.tenantId),
-      weeklyHours: intersectWeeklyHours(
-        branch.weeklyHours,
-        branchProfessional.weeklyHours,
-      ),
+      weeklyHours,
+      serviceWindowHours,
       earliestStartAt: this.earliestStartFor(input.actor, config),
     };
   }

@@ -11,6 +11,12 @@ export class ServiceResponseDto {
   @ApiProperty()
   name: string;
 
+  @ApiProperty({ nullable: true })
+  description: string | null;
+
+  @ApiProperty({ type: [String] })
+  keywords: string[];
+
   @ApiProperty()
   durationMinutes: number;
 
@@ -45,6 +51,8 @@ export class ServiceResponseDto {
     return {
       id: service.id,
       name: service.name,
+      description: service.description,
+      keywords: service.keywords,
       durationMinutes: service.durationMinutes,
       price: MoneyResponseDto.from(service.price),
       requiresDeposit: service.requiresDeposit,

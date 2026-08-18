@@ -40,3 +40,16 @@ export function describeWorkingDays(weeklyHours: WeeklyHours): string[] {
     return hours ? [`${DAY_NAMES[day]} ${hours.start} a ${hours.end}`] : [];
   });
 }
+
+// Day names only — clock times in the catalog invite the model to invent free slots.
+export function describeWorkingDayNames(weeklyHours: WeeklyHours): string[] {
+  return (Object.keys(DAY_NAMES) as (keyof WeeklyHours)[]).flatMap((day) =>
+    weeklyHours[day] ? [DAY_NAMES[day]] : [],
+  );
+}
+
+export function hasAnyOpenDay(weeklyHours: WeeklyHours): boolean {
+  return (Object.keys(DAY_NAMES) as (keyof WeeklyHours)[]).some(
+    (day) => weeklyHours[day] !== null,
+  );
+}

@@ -8,6 +8,7 @@ import {
   CONVERSATION_REPOSITORY,
   ConversationRepository,
 } from '@domain/conversations/repositories/conversation.repository';
+import { ConversationHandoffLabelService } from '../services/conversation-handoff-label.service';
 
 @Injectable()
 export class PauseConversationBotUseCase {
@@ -15,6 +16,7 @@ export class PauseConversationBotUseCase {
     @Inject(CONVERSATION_REPOSITORY)
     private readonly conversationRepository: ConversationRepository,
     private readonly audit: AuditRecorder,
+    private readonly handoffLabel: ConversationHandoffLabelService,
   ) {}
 
   async execute(conversationId: string): Promise<Conversation> {
@@ -26,7 +28,10 @@ export class PauseConversationBotUseCase {
       action: AuditAction.CONVERSATION_BOT_PAUSED,
       entity: 'conversation',
       entityId: conversation.id,
+      after: { source: 'panel' },
     });
+
+    await this.handoffLabel.markAttention(conversation);
 
     return conversation;
   }

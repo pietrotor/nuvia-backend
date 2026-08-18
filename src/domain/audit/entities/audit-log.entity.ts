@@ -21,6 +21,8 @@ export enum AuditAction {
   BRANCH_PROFESSIONAL_UPDATED = 'branch_professional_updated',
   BRANCH_SERVICE_OFFERED = 'branch_service_offered',
   BRANCH_SERVICE_UPDATED = 'branch_service_updated',
+  BRANCH_PROFESSIONAL_SERVICE_WINDOW_UPSERTED = 'branch_professional_service_window_upserted',
+  BRANCH_PROFESSIONAL_SERVICE_WINDOW_REMOVED = 'branch_professional_service_window_removed',
   CLIENT_CREATED = 'client_created',
   CLIENT_UPDATED = 'client_updated',
   DEPOSIT_QR_UPLOADED = 'deposit_qr_uploaded',
@@ -41,6 +43,8 @@ export enum AuditAction {
   SUBSCRIPTION_STATUS_CHANGED = 'subscription_status_changed',
   PLAN_UPDATED = 'plan_updated',
   AGENT_PAUSED_BY_QUOTA = 'agent_paused_by_quota',
+  AGENT_TRACE_VIEWED = 'agent_trace_viewed',
+  AGENT_TRACES_PRUNED = 'agent_traces_pruned',
   SUPERADMIN_ACCESS = 'superadmin_access',
 }
 

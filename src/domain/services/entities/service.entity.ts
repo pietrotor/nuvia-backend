@@ -5,6 +5,8 @@ export interface ServiceProps {
   id: string;
   tenantId: string;
   name: string;
+  description?: string | null;
+  keywords?: string[];
   durationMinutes: number;
   currency: Currency;
   price: string;
@@ -23,6 +25,8 @@ export class Service {
   public readonly id: string;
   public readonly tenantId: string;
   public readonly name: string;
+  public readonly description: string | null;
+  public readonly keywords: string[];
   public readonly durationMinutes: number;
   public readonly price: Money;
   public readonly requiresDeposit: boolean;
@@ -40,6 +44,8 @@ export class Service {
     this.id = props.id;
     this.tenantId = props.tenantId;
     this.name = props.name;
+    this.description = props.description ?? null;
+    this.keywords = props.keywords ?? [];
     this.durationMinutes = props.durationMinutes;
     // One currency per service: taking it from a single prop is what makes a deposit
     // in a different currency than its price impossible to represent.

@@ -85,6 +85,45 @@ export const branchServices = pgTable(
   ],
 );
 
+// Optional: when this professional offers this service at this branch.
+// No row = inherit full BranchProfessional ∩ Branch hours.
+export const branchProfessionalServiceWindows = pgTable(
+  'branch_professional_service_windows',
+  {
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    branchId: uuid('branch_id')
+      .notNull()
+      .references(() => branches.id, { onDelete: 'cascade' }),
+    professionalId: uuid('professional_id')
+      .notNull()
+      .references(() => professionals.id, { onDelete: 'cascade' }),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    weeklyHours: jsonb('weekly_hours').$type<WeeklyHours>().notNull(),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    primaryKey({
+      columns: [t.branchId, t.professionalId, t.serviceId],
+    }),
+    index('branch_professional_service_windows_tenant_idx').on(t.tenantId),
+    index('branch_professional_service_windows_professional_idx').on(
+      t.professionalId,
+    ),
+    index('branch_professional_service_windows_service_idx').on(t.serviceId),
+  ],
+);
+
 export const userBranches = pgTable(
   'user_branches',
   {
@@ -107,4 +146,6 @@ export const userBranches = pgTable(
 
 export type BranchProfessionalSchema = typeof branchProfessionals.$inferSelect;
 export type BranchServiceSchema = typeof branchServices.$inferSelect;
+export type BranchProfessionalServiceWindowSchema =
+  typeof branchProfessionalServiceWindows.$inferSelect;
 export type UserBranchSchema = typeof userBranches.$inferSelect;

@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
@@ -8,6 +9,7 @@ import {
 } from '@domain/business-config/repositories/business-config.repository';
 import { DEFAULT_AGENT_POLICY } from '@domain/business-config/entities/business-config.entity';
 import { CLOCK_PORT, ClockPort } from '@domain/common/ports/clock.port';
+import { DomainException, ErrorCode } from '@domain/common/exceptions';
 import {
   Message,
   MessageDirection,
@@ -37,9 +39,16 @@ import {
 import { SendDepositQrUseCase } from '@application/deposits/use-cases/send-deposit-qr.use-case';
 import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
 import { LOGGER_PORT, LoggerPort } from '@domain/common/ports/logger.port';
+import {
+  AGENT_TRACE_REPOSITORY,
+  AgentTraceRepository,
+} from '@domain/agent/repositories/agent-trace.repository';
+import { ConversationHandoffLabelService } from '@application/conversations/services/conversation-handoff-label.service';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
+import { greetingReply, isPureGreeting } from '../messages/pure-greeting';
 import { toWhatsAppText } from '../messages/whatsapp-text';
 import { AgentOrchestrator } from '../services/agent-orchestrator.service';
+import { AgentTraceDraft } from '../services/agent-trace.draft';
 import { AgentFollowUp } from '../tools/agent-tool';
 
 const HISTORY_SIZE = 20;
@@ -51,6 +60,8 @@ const FALLBACK_TIMEZONE = 'America/La_Paz';
 const THINKING_INDICATOR_MS = 5_000;
 
 const SUBSCRIPTION_HANDOFF_REASON = 'subscription_limit';
+
+const LLM_HANDOFF_REASON = 'llm_provider_error';
 
 export interface ReplyToConversationInput {
   tenantId: string;
@@ -81,6 +92,10 @@ export class ReplyToConversationUseCase {
     private readonly sendDepositQr: SendDepositQrUseCase,
     private readonly audit: AuditRecorder,
     private readonly entitlements: PlanEntitlements,
+    @Inject(AGENT_TRACE_REPOSITORY)
+    private readonly traces: AgentTraceRepository,
+    private readonly configService: ConfigService,
+    private readonly handoffLabel: ConversationHandoffLabelService,
   ) {}
 
   async execute(input: ReplyToConversationInput): Promise<void> {
@@ -96,6 +111,11 @@ export class ReplyToConversationUseCase {
     // The client kept writing after this message: the job queued for her last
     // one answers the whole burst, so this job steps aside.
     if (!trigger || trigger.providerMessageId !== input.providerMessageId) {
+      await this.recordSkip(
+        input,
+        trigger?.content ?? null,
+        'skipped_superseded',
+      );
       return;
     }
 
@@ -114,15 +134,17 @@ export class ReplyToConversationUseCase {
         handoffAutoResumeMinutes,
       })
     ) {
+      await this.recordSkip(input, trigger.content, 'skipped_paused');
       return;
     }
 
     const access = await this.entitlements.agentAccess();
     if (!access.allowed) {
-      await this.conversations.setHandoff(
+      const paused = await this.conversations.setHandoff(
         conversation.id,
         SUBSCRIPTION_HANDOFF_REASON,
       );
+      await this.handoffLabel.markAttention(paused);
       await this.audit.record({
         action: AuditAction.AGENT_PAUSED_BY_QUOTA,
         entity: 'conversation',
@@ -133,6 +155,7 @@ export class ReplyToConversationUseCase {
           limit: access.limit,
         },
       });
+      await this.recordSkip(input, trigger.content, 'skipped_quota');
       return;
     }
 
@@ -141,12 +164,13 @@ export class ReplyToConversationUseCase {
     await this.showReading(input);
 
     if (conversation.botPaused) {
-      await this.conversations.resumeBot(conversation.id);
+      const resumed = await this.conversations.resumeBot(conversation.id);
+      await this.handoffLabel.clearAttention(resumed);
       await this.audit.record({
         action: AuditAction.CONVERSATION_BOT_RESUMED,
         entity: 'conversation',
         entityId: conversation.id,
-        after: { reason: 'auto_timeout' },
+        after: { reason: 'auto_timeout', source: 'auto_timeout' },
       });
 
       await this.send({
@@ -165,19 +189,46 @@ export class ReplyToConversationUseCase {
       waitingSince = this.clock.now();
     }
 
-    const answer =
-      trigger.kind === MessageKind.TEXT && trigger.content
-        ? await this.orchestrator.respond(history, {
+    let answer: {
+      text: string;
+      promptFingerprint: string | null;
+      followUps: AgentFollowUp[];
+    };
+    try {
+      if (
+        trigger.kind === MessageKind.TEXT &&
+        trigger.content &&
+        this.shouldShortCircuitGreeting(trigger.content, history)
+      ) {
+        answer = await this.greetingAnswer(input, trigger.content, agentName);
+      } else if (trigger.kind === MessageKind.TEXT && trigger.content) {
+        answer = await this.orchestrator.respond(
+          history,
+          {
             tenantId: input.tenantId,
             conversationId: conversation.id,
             clientId: input.clientId,
             clientPhoneE164: input.clientPhoneE164,
-          })
-        : {
-            text: AgentOutboundCopy.nonTextInbound,
-            promptFingerprint: null,
-            followUps: [] as AgentFollowUp[],
-          };
+          },
+          {
+            providerMessageId: input.providerMessageId,
+            text: trigger.content,
+          },
+        );
+      } else {
+        answer = await this.nonTextAnswer(input, trigger.content);
+      }
+    } catch (error) {
+      if (!this.isLlmFailure(error)) throw error;
+      await this.handleLlmFailure({
+        conversationId: conversation.id,
+        input,
+        error,
+        waitingSince,
+        slowdown,
+      });
+      return;
+    }
 
     await this.send({
       conversationId: conversation.id,
@@ -194,6 +245,146 @@ export class ReplyToConversationUseCase {
         conversationId: conversation.id,
         clientPhoneE164: input.clientPhoneE164,
       });
+    }
+  }
+
+  private greetingShortCircuitEnabled(): boolean {
+    const raw = this.configService
+      .get<string>('LLM_SHORT_CIRCUIT_GREETINGS', 'true')
+      ?.trim();
+    return raw !== 'false' && raw !== '0';
+  }
+
+  private shouldShortCircuitGreeting(
+    text: string,
+    history: Message[],
+  ): boolean {
+    if (!this.greetingShortCircuitEnabled()) return false;
+    if (!isPureGreeting(text)) return false;
+    // Only the opening of a conversation: any earlier inbound that was not a
+    // pure greeting means the client already started a real request.
+    return history
+      .filter(
+        (message) =>
+          message.direction === MessageDirection.INBOUND &&
+          message.kind === MessageKind.TEXT &&
+          message.content,
+      )
+      .every((message) => isPureGreeting(message.content));
+  }
+
+  private async greetingAnswer(
+    input: ReplyToConversationInput,
+    inboundText: string,
+    agentName: string,
+  ): Promise<{
+    text: string;
+    promptFingerprint: null;
+    followUps: AgentFollowUp[];
+  }> {
+    await this.recordSkip(input, inboundText, 'short_circuit_greeting');
+    return {
+      text: greetingReply(agentName),
+      promptFingerprint: null,
+      followUps: [],
+    };
+  }
+
+  private isLlmFailure(error: unknown): error is DomainException {
+    return (
+      error instanceof DomainException &&
+      (error.code === ErrorCode.LLM_NOT_CONFIGURED ||
+        error.code === ErrorCode.LLM_PROVIDER_ERROR)
+    );
+  }
+
+  private async handleLlmFailure(params: {
+    conversationId: string;
+    input: ReplyToConversationInput;
+    error: DomainException;
+    waitingSince: Date;
+    slowdown: number;
+  }): Promise<void> {
+    this.logger.error(
+      `LLM unavailable for conversation ${params.conversationId}: ${params.error.code}` +
+        (params.error.params.status != null
+          ? ` status=${params.error.params.status}`
+          : '') +
+        (params.error.params.error_type != null
+          ? ` error_type=${params.error.params.error_type}`
+          : '') +
+        (params.error.params.model != null
+          ? ` model=${params.error.params.model}`
+          : ''),
+      undefined,
+      ReplyToConversationUseCase.name,
+    );
+
+    const paused = await this.conversations.setHandoff(
+      params.conversationId,
+      LLM_HANDOFF_REASON,
+    );
+    await this.handoffLabel.markAttention(paused);
+    await this.audit.record({
+      action: AuditAction.CONVERSATION_BOT_PAUSED,
+      entity: 'conversation',
+      entityId: params.conversationId,
+      after: { reason: LLM_HANDOFF_REASON, code: params.error.code },
+    });
+
+    await this.send({
+      conversationId: params.conversationId,
+      input: params.input,
+      text: AgentOutboundCopy.llmUnavailable,
+      waitingSince: params.waitingSince,
+      slowdown: params.slowdown,
+      inReplyTo: params.input.providerMessageId,
+    });
+  }
+
+  private async nonTextAnswer(
+    input: ReplyToConversationInput,
+    inboundText: string | null,
+  ): Promise<{
+    text: string;
+    promptFingerprint: null;
+    followUps: AgentFollowUp[];
+  }> {
+    await this.recordSkip(input, inboundText, 'skipped_non_text');
+    return {
+      text: AgentOutboundCopy.nonTextInbound,
+      promptFingerprint: null,
+      followUps: [],
+    };
+  }
+
+  private async recordSkip(
+    input: ReplyToConversationInput,
+    inboundText: string | null,
+    reason:
+      | 'skipped_paused'
+      | 'skipped_quota'
+      | 'skipped_superseded'
+      | 'skipped_non_text'
+      | 'short_circuit_greeting',
+  ): Promise<void> {
+    try {
+      await this.traces.save(
+        AgentTraceDraft.skipped({
+          tenantId: input.tenantId,
+          conversationId: input.conversationId,
+          triggerProviderMessageId: input.providerMessageId,
+          inboundText,
+          reason,
+          startedAt: this.clock.now(),
+        }),
+      );
+    } catch (error) {
+      this.logger.error(
+        `Could not persist skipped agent trace for conversation ${input.conversationId}`,
+        error instanceof Error ? error.stack : undefined,
+        ReplyToConversationUseCase.name,
+      );
     }
   }
 

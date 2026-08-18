@@ -163,20 +163,45 @@ export class AvailabilityCalculator {
 
   private isBusy(slot: TimeSlot, input: AvailabilityInput): boolean {
     return (
+      this.slotConflict({
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        appointments: input.appointments,
+        blocks: input.blocks,
+      }) !== null
+    );
+  }
+
+  // Appointments and schedule blocks both make a moment unbookable, but the client hears
+  // different sentences: "ya está ocupada" vs "esa profesional no está disponible".
+  slotConflict(input: {
+    startsAt: Date;
+    endsAt: Date;
+    appointments: Appointment[];
+    blocks: ScheduleBlock[];
+  }): 'appointment' | 'block' | null {
+    if (
       input.appointments.some(
         (appointment) =>
           appointment.isActiveSlot() &&
           overlaps(
-            slot.startsAt,
-            slot.endsAt,
+            input.startsAt,
+            input.endsAt,
             appointment.startsAt,
             appointment.endsAt,
           ),
-      ) ||
-      input.blocks.some((block) =>
-        overlaps(slot.startsAt, slot.endsAt, block.startsAt, block.endsAt),
       )
-    );
+    ) {
+      return 'appointment';
+    }
+    if (
+      input.blocks.some((block) =>
+        overlaps(input.startsAt, input.endsAt, block.startsAt, block.endsAt),
+      )
+    ) {
+      return 'block';
+    }
+    return null;
   }
 
   isSlotAvailable(input: {
@@ -206,16 +231,13 @@ export class AvailabilityCalculator {
       return false;
     }
 
-    const busy =
-      input.appointments.some(
-        (a) =>
-          a.isActiveSlot() &&
-          overlaps(input.startsAt, input.endsAt, a.startsAt, a.endsAt),
-      ) ||
-      input.blocks.some((b) =>
-        overlaps(input.startsAt, input.endsAt, b.startsAt, b.endsAt),
-      );
-
-    return !busy;
+    return (
+      this.slotConflict({
+        startsAt: input.startsAt,
+        endsAt: input.endsAt,
+        appointments: input.appointments,
+        blocks: input.blocks,
+      }) === null
+    );
   }
 }

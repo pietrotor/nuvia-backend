@@ -12,6 +12,7 @@ import { conversations, messages } from './conversation.schema';
 import { branches } from './branch.schema';
 import {
   branchProfessionals,
+  branchProfessionalServiceWindows,
   branchServices,
   userBranches,
 } from './branch-assignment.schema';
@@ -51,6 +52,7 @@ export const branchRelations = relations(branches, ({ one, many }) => ({
   }),
   professionals: many(branchProfessionals),
   services: many(branchServices),
+  serviceWindows: many(branchProfessionalServiceWindows),
   userBranches: many(userBranches),
   appointments: many(appointments),
   scheduleBlocks: many(scheduleBlocks),
@@ -94,6 +96,28 @@ export const branchServiceRelations = relations(branchServices, ({ one }) => ({
     references: [depositQrs.id],
   }),
 }));
+
+export const branchProfessionalServiceWindowRelations = relations(
+  branchProfessionalServiceWindows,
+  ({ one }) => ({
+    tenant: one(tenants, {
+      fields: [branchProfessionalServiceWindows.tenantId],
+      references: [tenants.id],
+    }),
+    branch: one(branches, {
+      fields: [branchProfessionalServiceWindows.branchId],
+      references: [branches.id],
+    }),
+    professional: one(professionals, {
+      fields: [branchProfessionalServiceWindows.professionalId],
+      references: [professionals.id],
+    }),
+    service: one(services, {
+      fields: [branchProfessionalServiceWindows.serviceId],
+      references: [services.id],
+    }),
+  }),
+);
 
 export const userBranchRelations = relations(userBranches, ({ one }) => ({
   tenant: one(tenants, {

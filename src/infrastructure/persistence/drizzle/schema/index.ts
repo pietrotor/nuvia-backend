@@ -12,6 +12,7 @@ export * from './client.schema';
 export * from './schedule-block.schema';
 export * from './appointment.schema';
 export * from './conversation.schema';
+export * from './agent-trace.schema';
 export * from './plan.schema';
 export * from './subscription.schema';
 export * from './relations.schema';

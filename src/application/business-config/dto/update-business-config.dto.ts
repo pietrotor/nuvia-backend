@@ -1,5 +1,6 @@
 import { Type } from 'class-transformer';
 import {
+  IsBoolean,
   IsEnum,
   IsInt,
   IsObject,
@@ -73,6 +74,27 @@ export class AgentPolicyDto {
   @IsString()
   @MaxLength(500)
   businessNotes?: string | null;
+
+  @ApiProperty({
+    required: false,
+    example: false,
+    description:
+      'Mirror the handoff (bot paused) state onto a WhatsApp Business label and honour the owner adding/removing it from her phone. Opt-in per tenant.',
+  })
+  @IsOptional()
+  @IsBoolean()
+  humanAttentionLabelSync?: boolean;
+
+  @ApiProperty({
+    required: false,
+    example: 'Requiere atención humana',
+    description: 'Owner-facing text of the human-attention label',
+  })
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(100)
+  humanAttentionLabelName?: string;
 }
 
 export class UpdateBusinessConfigDto {
