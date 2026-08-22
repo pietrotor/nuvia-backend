@@ -144,6 +144,71 @@ describe('AgentOrchestrator', () => {
     );
   });
 
+  it('never prefixes our own turns with the quoted-reply header', async () => {
+    const llm: jest.Mocked<LlmPort> = {
+      chat: jest.fn().mockResolvedValue({ content: 'Claro.', toolCalls: [] }),
+    };
+    const previousAnswer = new Message({
+      id: 'message-out',
+      tenantId: 'tenant-id',
+      conversationId: 'conversation-id',
+      providerMessageId: 'provider-out',
+      // Outbound rows always point at the inbound they answer.
+      inReplyToProviderMessageId: 'provider-id',
+      direction: MessageDirection.OUTBOUND,
+      kind: MessageKind.TEXT,
+      content: 'Tenemos limpieza facial.',
+      occurredAt: new Date(),
+    });
+
+    await buildOrchestrator(llm).respond(
+      [...history, previousAnswer],
+      context,
+      trigger,
+    );
+
+    const assistantMessage = llm.chat.mock.calls[0][0].messages.find(
+      (message) => message.role === 'assistant',
+    );
+    expect(assistantMessage?.content).toBe('Tenemos limpieza facial.');
+  });
+
+  it('shows the client quote and the linked appointment of a quoted QR', async () => {
+    const llm: jest.Mocked<LlmPort> = {
+      chat: jest.fn().mockResolvedValue({ content: 'Listo.', toolCalls: [] }),
+    };
+    const qr = new Message({
+      id: 'message-qr',
+      tenantId: 'tenant-id',
+      conversationId: 'conversation-id',
+      providerMessageId: 'provider-qr',
+      inReplyToProviderMessageId: null,
+      relatedAppointmentId: 'ap-friday',
+      direction: MessageDirection.OUTBOUND,
+      kind: MessageKind.IMAGE,
+      content: 'Seña de Bs 50.',
+      occurredAt: new Date(),
+    });
+    const quotingClient = new Message({
+      id: 'message-quote',
+      tenantId: 'tenant-id',
+      conversationId: 'conversation-id',
+      providerMessageId: 'provider-id',
+      inReplyToProviderMessageId: 'provider-qr',
+      direction: MessageDirection.INBOUND,
+      kind: MessageKind.TEXT,
+      content: 'Este era el del viernes',
+      occurredAt: new Date(),
+    });
+
+    await buildOrchestrator(llm).respond([qr, quotingClient], context, trigger);
+
+    const userMessage = llm.chat.mock.calls[0][0].messages.at(-1);
+    expect(userMessage?.content).toContain('Respondiendo a:');
+    expect(userMessage?.content).toContain('cita vinculada: ap-friday');
+    expect(userMessage?.content).toContain('Este era el del viernes');
+  });
+
   it('carries the follow-up a tool asked for without showing it to the model', async () => {
     const llm: jest.Mocked<LlmPort> = {
       chat: jest

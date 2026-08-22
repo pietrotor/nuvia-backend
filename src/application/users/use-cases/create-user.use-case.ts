@@ -16,6 +16,8 @@ import {
 } from '@domain/users/ports/password-hasher.port';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
 import { PlanCap } from '@domain/subscriptions/value-objects/plan-config.vo';
 import { CreateUserDto } from '../dto/create-user.dto';
@@ -29,6 +31,8 @@ export class CreateUserUseCase {
     private readonly passwordHasher: PasswordHasherPort,
     private readonly audit: AuditRecorder,
     private readonly entitlements: PlanEntitlements,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
 
   async execute(dto: CreateUserDto): Promise<PublicUser> {
@@ -45,12 +49,18 @@ export class CreateUserUseCase {
       throw new EmailAlreadyRegisteredError(email);
     }
 
+    const country = await this.tenantCountry.getCurrentCountryCode();
+    const phone =
+      dto.phone === undefined || dto.phone === null
+        ? null
+        : this.phoneNumbers.normalizeToE164(dto.phone, country);
+
     const created = await this.userRepository.create({
       name: dto.name.trim(),
       email,
       password: await this.passwordHasher.hash(dto.password),
       role: dto.role,
-      phone: dto.phone ?? null,
+      phone,
     });
 
     await this.audit.record({

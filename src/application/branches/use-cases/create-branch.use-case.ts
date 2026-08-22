@@ -12,6 +12,8 @@ import { assertValidWeeklyHours } from '@domain/business-config/services/e1-conf
 import { CreateBranchDto } from '../dto/create-branch.dto';
 import { slugifyBranchName } from '../services/branch-slug';
 import { PlanEntitlements } from '@application/subscriptions/services/plan-entitlements.service';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { PlanCap } from '@domain/subscriptions/value-objects/plan-config.vo';
 
 @Injectable()
@@ -21,6 +23,8 @@ export class CreateBranchUseCase {
     private readonly branchRepository: BranchRepository,
     private readonly audit: AuditRecorder,
     private readonly entitlements: PlanEntitlements,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
 
   async execute(dto: CreateBranchDto): Promise<Branch> {
@@ -34,12 +38,18 @@ export class CreateBranchUseCase {
       await this.demoteCurrentPrimary();
     }
 
+    const country = await this.tenantCountry.getCurrentCountryCode();
+    const phone =
+      dto.phone === undefined || dto.phone === null
+        ? null
+        : this.phoneNumbers.normalizeToE164(dto.phone, country);
+
     const created = await this.branchRepository.create({
       name: dto.name.trim(),
       slug: dto.slug?.trim() || slugifyBranchName(dto.name) || 'branch',
       address: dto.address ?? null,
       mapsUrl: dto.mapsUrl ?? null,
-      phone: dto.phone ?? null,
+      phone,
       weeklyHours: dto.weeklyHours,
       timezone: dto.timezone ?? null,
       isPrimary: makePrimary,

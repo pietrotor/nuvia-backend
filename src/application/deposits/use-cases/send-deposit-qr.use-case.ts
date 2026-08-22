@@ -1,4 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { DateTime } from 'luxon';
 
 import {
   APPOINTMENT_REPOSITORY,
@@ -30,6 +31,7 @@ import { resolveDepositQr } from '@domain/deposits/services/deposit-qr-resolver'
 import {
   MESSAGING_PORT,
   MessagingPort,
+  OutboundClass,
 } from '@domain/messaging/ports/messaging.port';
 import {
   SERVICE_REPOSITORY,
@@ -40,6 +42,10 @@ import {
   OBJECT_STORAGE_PORT,
   ObjectStoragePort,
 } from '@domain/storage/ports/object-storage.port';
+import {
+  TENANT_REPOSITORY,
+  TenantRepository,
+} from '@domain/tenants/repositories/tenant.repository';
 import { DepositOutboundCopy } from '../messages/deposit-outbound.copy';
 
 // Invoked from the agent flow rather than from HTTP, so the caller already knows the
@@ -83,6 +89,8 @@ export class SendDepositQrUseCase {
     private readonly clock: ClockPort,
     @Inject(LOGGER_PORT)
     private readonly logger: LoggerPort,
+    @Inject(TENANT_REPOSITORY)
+    private readonly tenantRepository: TenantRepository,
   ) {}
 
   async execute(input: SendDepositQrInput): Promise<SendDepositQrResult> {
@@ -134,10 +142,18 @@ export class SendDepositQrUseCase {
       return { outcome: 'no_qr_configured', amount: amount.display() };
     }
 
-    const image = await this.storage.get(depositQr.storageKey);
+    const [image, tenant] = await Promise.all([
+      this.storage.get(depositQr.storageKey),
+      this.tenantRepository.findById(appointment.tenantId),
+    ]);
+    const startsAtLabel = DateTime.fromJSDate(appointment.startsAt)
+      .setZone(tenant?.timezone ?? 'America/La_Paz')
+      .setLocale('es')
+      .toFormat("cccc d 'de' LLLL, HH:mm");
     const caption = DepositOutboundCopy.qrCaption({
       serviceName: service.name,
       amount: amount.display(),
+      startsAtLabel,
     });
     const sent = await this.messaging.sendMedia({
       tenantId: appointment.tenantId,
@@ -145,6 +161,7 @@ export class SendDepositQrUseCase {
       media: { source: 'bytes', bytes: image.body },
       mimeType: image.contentType ?? depositQr.mimeType,
       caption,
+      outboundClass: OutboundClass.TRANSACTIONAL,
     });
     await this.messageRepository.recordIfNew({
       conversationId: input.conversationId,
@@ -152,6 +169,7 @@ export class SendDepositQrUseCase {
       direction: MessageDirection.OUTBOUND,
       kind: MessageKind.IMAGE,
       content: caption,
+      relatedAppointmentId: appointment.id,
       occurredAt: this.clock.now(),
     });
 

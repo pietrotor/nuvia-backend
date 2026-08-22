@@ -35,6 +35,7 @@ export class ListMyAppointmentsAgentTool implements AgentTool {
     const appointments = await this.listClientAppointments.execute({
       clientId: context.clientId,
       onlyUpcoming: true,
+      scope: 'managed',
     });
 
     const branchIds = [

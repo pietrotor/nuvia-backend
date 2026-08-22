@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AppointmentNotificationsModule } from '@application/appointment-notifications/appointment-notifications.module';
 import { CreateProfessionalUseCase } from '@application/professionals/use-cases/create-professional.use-case';
 import { DeleteProfessionalAvatarUseCase } from '@application/professionals/use-cases/delete-professional-avatar.use-case';
 import { GetProfessionalAvatarUseCase } from '@application/professionals/use-cases/get-professional-avatar.use-case';
@@ -11,7 +12,7 @@ import { AppointmentsModule } from '@interface/http/appointments/appointments.mo
 import { ProfessionalsController } from './professionals.controller';
 
 @Module({
-  imports: [AppointmentsModule],
+  imports: [AppointmentsModule, AppointmentNotificationsModule],
   controllers: [ProfessionalsController],
   providers: [
     CreateProfessionalUseCase,

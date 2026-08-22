@@ -4,8 +4,12 @@ import { Job, Queue } from 'bullmq';
 
 import { RecordInboundMessageUseCase } from '@application/agent/use-cases/record-inbound-message.use-case';
 import { ReplyToConversationUseCase } from '@application/agent/use-cases/reply-to-conversation.use-case';
+import { HandleNotificationCommandUseCase } from '@application/appointment-notifications/use-cases/handle-notification-command.use-case';
 import { EnsureHumanAttentionLabelUseCase } from '@application/messaging/use-cases/ensure-human-attention-label.use-case';
 import { SyncConversationLabelUseCase } from '@application/conversations/use-cases/sync-conversation-label.use-case';
+import { CaptureInboundDepositReceiptUseCase } from '@application/deposits/use-cases/capture-inbound-deposit-receipt.use-case';
+import { parseNotificationCommand } from '@domain/appointment-notifications/value-objects/notification-command.vo';
+import { MessageKind } from '@domain/conversations/entities/message.entity';
 import { replyDebounceMs } from '@domain/messaging/services/human-pacing';
 import {
   TENANT_CONTEXT_PORT,
@@ -63,8 +67,10 @@ export class InboundMessagesProcessor extends WorkerHost {
     private readonly parser: EvolutionWebhookParser,
     private readonly recordInboundMessage: RecordInboundMessageUseCase,
     private readonly replyToConversation: ReplyToConversationUseCase,
+    private readonly handleNotificationCommand: HandleNotificationCommandUseCase,
     private readonly syncConversationLabel: SyncConversationLabelUseCase,
     private readonly ensureHumanAttentionLabel: EnsureHumanAttentionLabelUseCase,
+    private readonly captureDepositReceipt: CaptureInboundDepositReceiptUseCase,
     @Inject(TENANT_CONTEXT_PORT)
     private readonly tenantContext: TenantContextPort,
     @InjectQueue(INBOUND_MESSAGES_QUEUE)
@@ -118,10 +124,64 @@ export class InboundMessagesProcessor extends WorkerHost {
     }
 
     const { tenantId, providerMessageId } = job.data;
+    const command = parseNotificationCommand(message.content);
+    if (command) {
+      const handled = await this.tenantContext.runWithTenant(tenantId, () =>
+        this.handleNotificationCommand.execute({
+          tenantId,
+          phoneE164: message.clientPhoneE164,
+          providerMessageId,
+          command,
+        }),
+      );
+      if (handled) return;
+    }
+
     const recorded = await this.tenantContext.runWithTenant(tenantId, () =>
-      this.recordInboundMessage.execute({ ...message, providerMessageId }),
+      this.recordInboundMessage.execute({
+        ...message,
+        providerMessageId,
+        allowRecovery: job.attemptsMade > 0,
+      }),
     );
     if (!recorded.needsReply) return;
+
+    if (message.kind === MessageKind.IMAGE) {
+      const replyJobId = `${tenantId}-reply-${recorded.conversationId}`;
+      const existingReply = await this.queue.getJob(replyJobId);
+      const existingReplyState = existingReply
+        ? await existingReply.getState()
+        : undefined;
+      const shouldContinueAgent =
+        existingReplyState === 'active' ||
+        existingReplyState === 'delayed' ||
+        existingReplyState === 'waiting' ||
+        Boolean(message.content?.trim());
+      const outcome = await this.tenantContext.runWithTenant(tenantId, () =>
+        this.captureDepositReceipt.execute({
+          tenantId,
+          clientId: recorded.clientId,
+          conversationId: recorded.conversationId,
+          clientPhoneE164: message.clientPhoneE164,
+          providerMessageId,
+          inReplyToProviderMessageId: message.inReplyToProviderMessageId,
+          deferAmbiguousReply: shouldContinueAgent,
+          occurredAt: message.occurredAt,
+        }),
+      );
+      if (outcome !== 'not_expected') {
+        if (shouldContinueAgent) {
+          await this.replaceDelayedReply(replyJobId, {
+            tenantId,
+            conversationId: recorded.conversationId,
+            clientId: recorded.clientId,
+            clientPhoneE164: message.clientPhoneE164,
+            providerMessageId,
+          });
+        }
+        return;
+      }
+    }
 
     // One delayed reply per conversation: later messages in a burst replace the
     // pending job so the LLM runs once against the full history.

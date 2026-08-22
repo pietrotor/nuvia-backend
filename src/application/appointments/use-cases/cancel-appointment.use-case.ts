@@ -22,6 +22,12 @@ import {
 } from '@domain/services/repositories/service.repository';
 import { ServiceNotFoundError } from '@domain/services/exceptions/service.exceptions';
 import { CancelAppointmentDto } from '../dto/cancel-appointment.dto';
+import { AppointmentNotificationPublisher } from '@application/appointment-notifications/services/appointment-notification.publisher';
+import { AppointmentReminderPublisher } from '@application/reminders/services/appointment-reminder.publisher';
+import {
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '@domain/common/ports/transaction.port';
 
 export interface CancelAppointmentResult {
   appointment: Appointment;
@@ -41,6 +47,10 @@ export class CancelAppointmentUseCase {
     private readonly clock: ClockPort,
     private readonly audit: AuditRecorder,
     private readonly agendaEvents: AgendaEventPublisher,
+    private readonly notifications: AppointmentNotificationPublisher,
+    private readonly reminders: AppointmentReminderPublisher,
+    @Inject(TRANSACTION_PORT)
+    private readonly transactions: TransactionPort,
   ) {}
 
   // restrictToClientId narrows the operation to a single client's appointments:
@@ -65,7 +75,12 @@ export class CancelAppointmentUseCase {
     if (!service) throw new ServiceNotFoundError(current.serviceId);
     if (!config) throw new BusinessConfigNotFoundError();
 
-    const appointment = await this.appointmentRepository.save(current.cancel());
+    const appointment = await this.transactions.run(async () => {
+      const cancelled = await this.appointmentRepository.save(current.cancel());
+      await this.notifications.recordCancelled(current);
+      await this.reminders.cancelOpen(cancelled.id);
+      return cancelled;
+    });
 
     await this.audit.record({
       action: AuditAction.APPOINTMENT_CANCELLED,

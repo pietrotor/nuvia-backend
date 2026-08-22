@@ -3,6 +3,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 
 import {
   CreateServiceData,
+  ServiceBookingQuestionInput,
   ServiceRepository,
   UpdateServiceData,
 } from '@domain/services/repositories/service.repository';
@@ -13,6 +14,7 @@ import { DatabaseErrorTranslator } from '@infrastructure/errors/database-error.t
 import { DrizzleService } from '../drizzle/drizzle.service';
 import {
   professionalServices,
+  serviceBookingQuestions,
   services,
 } from '../drizzle/schema/service.schema';
 import { ServiceMapper } from '../drizzle/mappers/service.mapper';
@@ -60,7 +62,14 @@ export class DrizzleServiceRepository
           );
         }
 
-        return ServiceMapper.toDomain(created, data.professionalIds);
+        const questions = await this.replaceQuestions(
+          tx,
+          tenantId,
+          created.id,
+          data.bookingQuestions ?? [],
+        );
+
+        return ServiceMapper.toDomain(created, data.professionalIds, questions);
       });
     } catch (error) {
       throw DatabaseErrorTranslator.toDomain(error);
@@ -71,14 +80,24 @@ export class DrizzleServiceRepository
     const [row] = await this.selectFrom(services, eq(services.id, id));
     if (!row) return null;
     const professionalIds = await this.professionalIdsFor([id]);
-    return ServiceMapper.toDomain(row, professionalIds.get(id) ?? []);
+    const questions = await this.questionsFor([id]);
+    return ServiceMapper.toDomain(
+      row,
+      professionalIds.get(id) ?? [],
+      questions.get(id) ?? [],
+    );
   }
 
   async findAll(): Promise<Service[]> {
     const rows = await this.selectFrom(services);
     const map = await this.professionalIdsFor(rows.map((r) => r.id));
+    const questions = await this.questionsFor(rows.map((r) => r.id));
     return rows.map((row) =>
-      ServiceMapper.toDomain(row, map.get(row.id) ?? []),
+      ServiceMapper.toDomain(
+        row,
+        map.get(row.id) ?? [],
+        questions.get(row.id) ?? [],
+      ),
     );
   }
 
@@ -86,7 +105,7 @@ export class DrizzleServiceRepository
     try {
       const tenantId = this.tenantId;
       return await this.drizzle.db.transaction(async (tx) => {
-        const { professionalIds, ...serviceData } = data;
+        const { professionalIds, bookingQuestions, ...serviceData } = data;
         const scope = and(eq(services.tenantId, tenantId), eq(services.id, id));
 
         /* A patch that only moves who offers the service leaves the row untouched, and
@@ -135,7 +154,16 @@ export class DrizzleServiceRepository
           assignedProfessionalIds = rows.map((row) => row.professionalId);
         }
 
-        return ServiceMapper.toDomain(updated, assignedProfessionalIds ?? []);
+        const questions =
+          bookingQuestions !== undefined
+            ? await this.replaceQuestions(tx, tenantId, id, bookingQuestions)
+            : ((await this.questionsFor([id], tx)).get(id) ?? []);
+
+        return ServiceMapper.toDomain(
+          updated,
+          assignedProfessionalIds ?? [],
+          questions,
+        );
       });
     } catch (error) {
       throw DatabaseErrorTranslator.toDomain(error);
@@ -143,6 +171,7 @@ export class DrizzleServiceRepository
   }
 
   async deleteAllUnscoped(): Promise<void> {
+    await this.drizzle.db.delete(serviceBookingQuestions);
     await this.drizzle.db.delete(professionalServices);
     await this.drizzle.db.delete(services);
   }
@@ -169,5 +198,97 @@ export class DrizzleServiceRepository
       result.set(row.serviceId, list);
     }
     return result;
+  }
+
+  private async questionsFor(
+    serviceIds: string[],
+    db: Pick<DrizzleService['db'], 'select'> = this.drizzle.db,
+  ) {
+    const result = new Map<
+      string,
+      (typeof serviceBookingQuestions.$inferSelect)[]
+    >();
+    if (serviceIds.length === 0) return result;
+
+    const rows = await db
+      .select()
+      .from(serviceBookingQuestions)
+      .where(
+        and(
+          eq(serviceBookingQuestions.tenantId, this.tenantId),
+          inArray(serviceBookingQuestions.serviceId, serviceIds),
+        ),
+      );
+
+    for (const row of rows) {
+      const list = result.get(row.serviceId) ?? [];
+      list.push(row);
+      result.set(row.serviceId, list);
+    }
+    return result;
+  }
+
+  private async replaceQuestions(
+    db: Pick<DrizzleService['db'], 'select' | 'insert' | 'update'>,
+    tenantId: string,
+    serviceId: string,
+    incoming: ServiceBookingQuestionInput[],
+  ) {
+    const existing =
+      (await this.questionsFor([serviceId], db)).get(serviceId) ?? [];
+    const keptIds = new Set(
+      incoming
+        .map((question) => question.id)
+        .filter((id): id is string => !!id),
+    );
+
+    for (const row of existing) {
+      if (!keptIds.has(row.id) && row.isActive) {
+        await db
+          .update(serviceBookingQuestions)
+          .set({ isActive: false })
+          .where(
+            and(
+              eq(serviceBookingQuestions.tenantId, tenantId),
+              eq(serviceBookingQuestions.id, row.id),
+            ),
+          );
+      }
+    }
+
+    for (const question of incoming) {
+      const current = question.id
+        ? existing.find((row) => row.id === question.id)
+        : undefined;
+      if (current) {
+        await db
+          .update(serviceBookingQuestions)
+          .set({
+            prompt: question.prompt,
+            kind: question.kind,
+            isRequired: question.isRequired,
+            sortOrder: question.sortOrder,
+            isActive: question.isActive ?? true,
+          })
+          .where(
+            and(
+              eq(serviceBookingQuestions.tenantId, tenantId),
+              eq(serviceBookingQuestions.id, current.id),
+            ),
+          );
+      } else {
+        await db.insert(serviceBookingQuestions).values({
+          tenantId,
+          serviceId,
+          prompt: question.prompt,
+          kind: question.kind,
+          isRequired: question.isRequired,
+          sortOrder: question.sortOrder,
+          isActive: question.isActive ?? true,
+        });
+      }
+    }
+
+    return (await this.questionsFor([serviceId], db)).get(serviceId) ?? [];
   }
 }

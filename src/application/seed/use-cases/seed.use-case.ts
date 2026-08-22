@@ -1097,6 +1097,7 @@ export class SeedUseCase {
           await this.appointmentRepository.create({
             branchId,
             clientId,
+            bookingContactClientId: clientId,
             professionalId,
             serviceId,
             startsAt,

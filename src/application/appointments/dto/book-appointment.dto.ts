@@ -1,11 +1,16 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import {
+  IsArray,
   IsDateString,
   IsInt,
   IsOptional,
+  IsString,
   IsUUID,
   Max,
+  MaxLength,
   Min,
+  ValidateNested,
 } from 'class-validator';
 
 import {
@@ -13,10 +18,32 @@ import {
   APPOINTMENT_DURATION_STEP_MINUTES,
 } from '../services/resolve-appointment-duration';
 
-export class BookAppointmentDto {
+export class BookingAnswerDto {
   @ApiProperty()
   @IsUUID()
+  questionId: string;
+
+  @ApiProperty({ example: 'Axilas' })
+  @IsString()
+  @MaxLength(1000)
+  value: string;
+}
+
+export class BookAppointmentDto {
+  @ApiProperty({
+    description: 'Person who will receive the service',
+  })
+  @IsUUID()
   clientId: string;
+
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Person who is managing the booking. Defaults to clientId when omitted.',
+  })
+  @IsOptional()
+  @IsUUID()
+  bookingContactClientId?: string;
 
   @ApiProperty()
   @IsUUID()
@@ -51,4 +78,11 @@ export class BookAppointmentDto {
   @Min(APPOINTMENT_DURATION_STEP_MINUTES)
   @Max(APPOINTMENT_DURATION_MAX_MINUTES)
   durationMinutes?: number;
+
+  @ApiPropertyOptional({ type: [BookingAnswerDto] })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => BookingAnswerDto)
+  answers?: BookingAnswerDto[];
 }

@@ -2,7 +2,11 @@ import { Global, Inject, Module, OnApplicationShutdown } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { Redis, RedisOptions } from 'ioredis';
 
-import { REDIS_PUBLISHER, REDIS_SUBSCRIBER } from './redis.constants';
+import {
+  REDIS_COMMANDS,
+  REDIS_PUBLISHER,
+  REDIS_SUBSCRIBER,
+} from './redis.constants';
 
 const RECONNECT_CEILING_MS = 5_000;
 
@@ -11,6 +15,12 @@ const baseOptions = (config: ConfigService): RedisOptions => ({
   port: Number(config.get<string>('REDIS_PORT', '6379')),
   retryStrategy: (attempt) => Math.min(attempt * 200, RECONNECT_CEILING_MS),
 });
+
+const commandClientFactory = (config: ConfigService): Redis =>
+  new Redis({
+    ...baseOptions(config),
+    enableOfflineQueue: false,
+  });
 
 const publisherFactory = (config: ConfigService): Redis =>
   new Redis({
@@ -37,17 +47,27 @@ const subscriberFactory = (config: ConfigService): Redis =>
       inject: [ConfigService],
       useFactory: subscriberFactory,
     },
+    {
+      provide: REDIS_COMMANDS,
+      inject: [ConfigService],
+      useFactory: commandClientFactory,
+    },
   ],
-  exports: [REDIS_PUBLISHER, REDIS_SUBSCRIBER],
+  exports: [REDIS_PUBLISHER, REDIS_SUBSCRIBER, REDIS_COMMANDS],
 })
 export class RedisModule implements OnApplicationShutdown {
   constructor(
     @Inject(REDIS_PUBLISHER) private readonly publisher: Redis,
     @Inject(REDIS_SUBSCRIBER) private readonly subscriber: Redis,
+    @Inject(REDIS_COMMANDS) private readonly commands: Redis,
   ) {}
 
   async onApplicationShutdown(): Promise<void> {
     // An ioredis client keeps the event loop alive until told to quit, which would hang the process.
-    await Promise.allSettled([this.publisher.quit(), this.subscriber.quit()]);
+    await Promise.allSettled([
+      this.publisher.quit(),
+      this.subscriber.quit(),
+      this.commands.quit(),
+    ]);
   }
 }

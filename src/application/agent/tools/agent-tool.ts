@@ -10,10 +10,14 @@ export interface AgentContext {
   timezone: string;
   // Null when the tenant has multiple active branches and none is pinned yet.
   branchId: string | null;
+  quotedProviderMessageId?: string | null;
 }
 
 // What the caller knows before the orchestrator resolves timezone and branch.
-export type InboundAgentContext = Omit<AgentContext, 'timezone' | 'branchId'>;
+export type InboundAgentContext = Omit<
+  AgentContext,
+  'timezone' | 'branchId' | 'quotedProviderMessageId'
+>;
 
 // An outbound the client is owed regardless of what the LLM writes next: the tool that
 // knows it is due says so, and the agent flow sends it after its own reply. Asking the

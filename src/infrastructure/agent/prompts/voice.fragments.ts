@@ -121,6 +121,14 @@ export const VOLATILE_FRAGMENTS: PromptFragment[] = [
     ],
   },
   {
+    key: 'volatile.client_name_pending',
+    layer: PromptLayer.VOLATILE,
+    lines: [
+      'Todavía no hay un nombre confirmado de quien escribe ({{clientNamePending}}).',
+      'Pedilo en esta conversación, de forma natural, y guardalo con confirm_client_name. No uses el nombre del perfil de WhatsApp. Podés informar servicios y precios antes; no reserves sin ese nombre.',
+    ],
+  },
+  {
     key: 'volatile.client_state',
     layer: PromptLayer.VOLATILE,
     lines: [

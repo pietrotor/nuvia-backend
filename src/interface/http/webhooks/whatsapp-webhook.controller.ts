@@ -18,17 +18,21 @@ import {
   BUSINESS_CONFIG_REPOSITORY,
   BusinessConfigRepository,
 } from '@domain/business-config/repositories/business-config.repository';
+import { EvolutionWebhookParser } from '@infrastructure/messaging/evolution-webhook.parser';
 import {
+  APPOINTMENT_NOTIFICATIONS_QUEUE,
   INBOUND_MESSAGE_JOB,
   INBOUND_MESSAGES_QUEUE,
   LABEL_ASSOCIATION_JOB,
   LABEL_ENSURE_JOB,
+  NOTIFICATION_STATUS_JOB,
 } from '@infrastructure/queues/queue.constants';
 import {
   InboundMessageJob,
   LabelAssociationJob,
   LabelEnsureJob,
 } from '@infrastructure/queues/processors/inbound-messages.processor';
+import { NotificationStatusJob } from '@infrastructure/queues/processors/appointment-notifications.processor';
 
 @ApiExcludeController()
 @Controller('webhooks/whatsapp')
@@ -41,6 +45,9 @@ export class WhatsAppWebhookController {
     private readonly inboundQueue: Queue<
       InboundMessageJob | LabelAssociationJob | LabelEnsureJob
     >,
+    @InjectQueue(APPOINTMENT_NOTIFICATIONS_QUEUE)
+    private readonly notificationQueue: Queue<NotificationStatusJob>,
+    private readonly parser: EvolutionWebhookParser,
   ) {}
 
   @Post()
@@ -88,6 +95,11 @@ export class WhatsAppWebhookController {
       return { accepted: true };
     }
 
+    if (event === 'MESSAGES_UPDATE') {
+      await this.enqueueStatusUpdates(config.tenantId, payload);
+      return { accepted: true };
+    }
+
     if (event !== 'MESSAGES_UPSERT') {
       return { accepted: true };
     }
@@ -107,6 +119,33 @@ export class WhatsAppWebhookController {
     );
 
     return { accepted: true };
+  }
+
+  private async enqueueStatusUpdates(
+    tenantId: string,
+    payload: Record<string, unknown>,
+  ): Promise<void> {
+    const updates = this.parser.parseStatusUpdates(payload);
+    await Promise.all(
+      updates.map((update) =>
+        this.notificationQueue.add(
+          NOTIFICATION_STATUS_JOB,
+          {
+            tenantId,
+            providerMessageId: update.providerMessageId,
+            status: update.status,
+            statusCode: update.statusCode,
+          },
+          {
+            jobId: `${tenantId}-status-${update.providerMessageId}-${update.status}`,
+            attempts: 3,
+            backoff: { type: 'exponential', delay: 2_000 },
+            removeOnComplete: 1000,
+            removeOnFail: 5000,
+          },
+        ),
+      ),
+    );
   }
 
   private async enqueueLabelAssociation(

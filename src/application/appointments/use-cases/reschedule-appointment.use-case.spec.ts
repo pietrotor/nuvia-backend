@@ -110,6 +110,7 @@ describe('RescheduleAppointmentUseCase', () => {
     Pick<ProfessionalRepository, 'findById'>
   >;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
+  let notifications: { recordRescheduled: jest.Mock };
   let useCase: RescheduleAppointmentUseCase;
 
   const newStartsAt = '2026-08-05T15:00:00.000Z';
@@ -129,6 +130,13 @@ describe('RescheduleAppointmentUseCase', () => {
       findById: jest.fn().mockResolvedValue(service(false)),
     };
     audit = { record: jest.fn() };
+    notifications = {
+      recordRescheduled: jest.fn().mockResolvedValue(undefined),
+    };
+    const reminders = {
+      syncPreVisit: jest.fn().mockResolvedValue(undefined),
+      cancelOpen: jest.fn().mockResolvedValue(undefined),
+    };
 
     professionalRepository = {
       findById: jest.fn().mockResolvedValue(
@@ -223,6 +231,9 @@ describe('RescheduleAppointmentUseCase', () => {
       clock,
       audit as unknown as AuditRecorder,
       { changed: jest.fn() } as unknown as AgendaEventPublisher,
+      notifications as never,
+      reminders as never,
+      { run: (fn: () => Promise<unknown>) => fn() } as never,
     );
   });
 
@@ -233,6 +244,7 @@ describe('RescheduleAppointmentUseCase', () => {
     expect(result.appointment.status).toBe(AppointmentStatus.CONFIRMED);
     expect(result.depositRequiresReview).toBe(false);
     expect(appointmentRepository.save).toHaveBeenCalled();
+    expect(notifications.recordRescheduled).toHaveBeenCalled();
   });
 
   it('does not count the appointment itself as a busy time', async () => {

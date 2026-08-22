@@ -11,6 +11,9 @@ describe('permissionsForRole', () => {
 
     expect(permissions.has(Permission.BUSINESS_CONFIG_WRITE)).toBe(true);
     expect(permissions.has(Permission.WHATSAPP_MANAGE)).toBe(true);
+    expect(permissions.has(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)).toBe(
+      true,
+    );
     expect(permissions.has(Permission.EVENTS_READ)).toBe(true);
     expect(permissions.has(Permission.SUBSCRIPTION_READ)).toBe(true);
     expect(permissions.has(Permission.TENANTS_ADMIN)).toBe(false);
@@ -24,6 +27,12 @@ describe('permissionsForRole', () => {
     const permissions = permissionsForRole(Role.STAFF);
 
     expect(permissions.has(Permission.APPOINTMENTS_WRITE)).toBe(true);
+    expect(permissions.has(Permission.APPOINTMENT_NOTIFICATIONS_READ)).toBe(
+      true,
+    );
+    expect(permissions.has(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)).toBe(
+      false,
+    );
     expect(permissions.has(Permission.SERVICES_READ)).toBe(true);
     expect(permissions.has(Permission.USERS_READ)).toBe(true);
     expect(permissions.has(Permission.SUBSCRIPTION_READ)).toBe(true);

@@ -26,6 +26,7 @@ import {
 import {
   MESSAGING_PORT,
   MessagingPort,
+  OutboundClass,
 } from '@domain/messaging/ports/messaging.port';
 import { SendManualMessageDto } from '../dto/send-manual-message.dto';
 import { ConversationHandoffLabelService } from '../services/conversation-handoff-label.service';
@@ -62,6 +63,7 @@ export class SendManualMessageUseCase {
       tenantId: config.tenantId,
       toE164: conversation.clientPhoneE164,
       text: dto.text,
+      outboundClass: OutboundClass.MANUAL,
     });
     const sentAt = this.clock.now();
     const message = await this.messageRepository.recordIfNew({

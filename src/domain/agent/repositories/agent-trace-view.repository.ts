@@ -7,6 +7,7 @@ export interface AgentTraceViewRepository {
     limit: number;
     offset: number;
     search?: string;
+    searchTerms?: string[];
   }): Promise<AgentTracedConversationListResult>;
 
   listByConversation(conversationId: string): Promise<AgentTraceSummary[]>;

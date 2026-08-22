@@ -73,6 +73,7 @@ function build(overrides: Partial<SystemPromptInput> = {}) {
     businessCatalog: 'Servicios:\n- Hidrafacial — id svc-1 — 75 min',
     clientState: 'no tiene ninguna reserva registrada',
     clientName: 'Ana',
+    clientNamePending: '',
     ...overrides,
   });
 }

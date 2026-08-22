@@ -13,6 +13,18 @@ export class InvalidDepositQrFileError extends ValidationError {
   }
 }
 
+export class InvalidDepositReceiptFileError extends ValidationError {
+  constructor(maxSizeMb: number) {
+    super(ErrorCode.INVALID_DEPOSIT_RECEIPT_FILE, { maxSizeMb });
+  }
+}
+
+export class DepositReceiptNotFoundError extends NotFoundError {
+  constructor(appointmentId: string) {
+    super(ErrorCode.DEPOSIT_RECEIPT_NOT_FOUND, { appointmentId });
+  }
+}
+
 export class DepositQrNotAllowedForServiceError extends ValidationError {
   constructor() {
     super(ErrorCode.DEPOSIT_QR_REQUIRES_DEPOSIT_SERVICE);

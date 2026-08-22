@@ -72,10 +72,22 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.CLIENT_NOT_FOUND]: 'No encontramos esa clienta.',
   [ErrorCode.CLIENT_PHONE_ALREADY_REGISTERED]:
     'Ya existe una clienta con el teléfono {phoneE164}.',
+  [ErrorCode.CLIENT_NAME_REQUIRED]:
+    'Necesitamos el nombre de quien va a atenderse para poder reservar.',
+  [ErrorCode.BOOKING_ANSWERS_INCOMPLETE]:
+    'Faltan respuestas obligatorias para este servicio.',
+  [ErrorCode.BOOKING_QUESTION_NOT_FOUND]:
+    'Esa pregunta de reserva ya no está disponible.',
+  [ErrorCode.BOOKING_ANSWER_INVALID]:
+    'La respuesta a una pregunta de reserva no es válida.',
   [ErrorCode.BUSINESS_CONFIG_NOT_FOUND]: 'Falta la configuración del negocio.',
   [ErrorCode.DEPOSIT_QR_NOT_FOUND]: 'No encontramos ese QR de cobro.',
   [ErrorCode.INVALID_DEPOSIT_QR_FILE]:
     'Subí una imagen PNG, JPG o WEBP de hasta {maxSizeMb} MB.',
+  [ErrorCode.INVALID_DEPOSIT_RECEIPT_FILE]:
+    'Subí un comprobante PNG, JPG o WEBP de hasta {maxSizeMb} MB.',
+  [ErrorCode.DEPOSIT_RECEIPT_NOT_FOUND]:
+    'Esta cita todavía no tiene un comprobante.',
   [ErrorCode.DEPOSIT_QR_REQUIRES_DEPOSIT_SERVICE]:
     'Solo podés asignar un QR a un servicio que cobra seña.',
   [ErrorCode.PROFESSIONAL_AVATAR_NOT_FOUND]:
@@ -108,4 +120,27 @@ export const es: Record<ErrorCode, string> = {
   [ErrorCode.SUBSCRIPTION_INVALID_PERIOD]:
     'El período de la suscripción no es válido.',
   [ErrorCode.INTERNAL_ERROR]: 'Ocurrió un error interno. Intentá de nuevo.',
+  [ErrorCode.NOTIFICATION_CONTACT_NOT_FOUND]:
+    'No encontramos ese contacto de avisos.',
+  [ErrorCode.NOTIFICATION_SUBSCRIPTION_NOT_FOUND]:
+    'No encontramos esa suscripción de avisos.',
+  [ErrorCode.NOTIFICATION_PHONE_ALREADY_REGISTERED]:
+    'Ese WhatsApp ya está configurado para avisos.',
+  [ErrorCode.NOTIFICATION_PROFESSIONAL_ALREADY_SUBSCRIBED]:
+    'Esa profesional ya tiene un número para avisos de citas.',
+  [ErrorCode.NOTIFICATION_BRANCH_OBSERVER_LIMIT]:
+    'Esta sucursal ya tiene el máximo de {limit} números observadores.',
+  [ErrorCode.NOTIFICATION_CONTACT_DEACTIVATED]:
+    'Ese número ya no recibe avisos. Configurá uno nuevo si hace falta.',
+  [ErrorCode.OUTBOUND_DEFERRED]:
+    'WhatsApp está ocupado. El aviso se va a enviar en un momento.',
+  [ErrorCode.OUTBOUND_BLOCKED]:
+    'Los envíos automáticos de WhatsApp están pausados para este negocio.',
+  [ErrorCode.INVALID_CLIENT_REMINDER_POLICY]:
+    'Elegí hasta tres avisos de la lista (24 h, 12 h, 2 h o 30 min). Si están activos, tiene que haber al menos uno.',
+  [ErrorCode.INVALID_PHONE_NUMBER]:
+    'Revisá el número de teléfono e intentá de nuevo.',
+  [ErrorCode.PHONE_EXTENSION_NOT_SUPPORTED]:
+    'No admitimos extensiones telefónicas. Ingresá el número directo.',
+  [ErrorCode.UNSUPPORTED_COUNTRY_CODE]: 'Ese país no está disponible todavía.',
 };

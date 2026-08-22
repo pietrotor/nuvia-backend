@@ -1,5 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { Client } from '@domain/clients/entities/client.entity';
@@ -15,6 +17,8 @@ export class CreateClientUseCase {
     @Inject(CLIENT_REPOSITORY)
     private readonly clientRepository: ClientRepository,
     private readonly audit: AuditRecorder,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
 
   /**
@@ -23,12 +27,19 @@ export class CreateClientUseCase {
    * her again should end up with one record, not an error.
    */
   async execute(dto: CreateClientDto): Promise<Client> {
-    const existing = await this.clientRepository.findByPhone(dto.phoneE164);
-    if (existing) return existing;
+    const country = await this.tenantCountry.getCurrentCountryCode();
+    const phoneE164 =
+      dto.phoneE164 === undefined || dto.phoneE164 === null
+        ? null
+        : this.phoneNumbers.normalizeToE164(dto.phoneE164, country);
+    if (phoneE164) {
+      const existing = await this.clientRepository.findByPhone(phoneE164);
+      if (existing) return existing;
+    }
 
-    const client = await this.clientRepository.findOrCreate({
+    const client = await this.clientRepository.create({
       name: dto.name.trim(),
-      phoneE164: dto.phoneE164,
+      phoneE164,
       email: dto.email?.trim() || null,
       birthDate: dto.birthDate ?? null,
       identificationType: dto.identificationType?.trim() || null,

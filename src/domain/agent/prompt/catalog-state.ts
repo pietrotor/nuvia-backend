@@ -21,6 +21,7 @@ export interface CatalogService {
   // Where the service is offered when the catalog spans more than one branch.
   branchNames?: string[];
   keywords?: string[];
+  bookingQuestions?: string[];
 }
 
 export interface CatalogBranch {
@@ -108,8 +109,12 @@ function serviceLine(service: CatalogService): string {
     service.keywords && service.keywords.length > 0
       ? ` — también: ${service.keywords.join(', ')}`
       : '';
+  const questions =
+    service.bookingQuestions && service.bookingQuestions.length > 0
+      ? ` — al reservar preguntar: ${service.bookingQuestions.join('; ')}`
+      : '';
 
-  return `- ${service.name} — id ${service.id} — ${service.durationMinutes} min${price} — ${professionals} — ${choice}${branches}${keywords}`;
+  return `- ${service.name} — id ${service.id} — ${service.durationMinutes} min${price} — ${professionals} — ${choice}${branches}${keywords}${questions}`;
 }
 
 function describeServiceBranches(branchNames: string[] | undefined): string {

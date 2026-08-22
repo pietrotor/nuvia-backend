@@ -1,9 +1,14 @@
+import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
 import { Currency } from '@domain/common/value-objects/currency.vo';
 
 import {
   BusinessCategory,
   DEFAULT_BUSINESS_CATEGORY,
 } from '../value-objects/business-category.vo';
+import {
+  ClientReminderPolicy,
+  mergeClientReminderPolicy,
+} from '../value-objects/client-reminder-policy.vo';
 
 export enum AgentTone {
   FORMAL = 'formal',
@@ -70,10 +75,12 @@ export interface BusinessConfigProps {
   tone: AgentTone;
   businessCategory?: BusinessCategory;
   currency: Currency;
+  countryCode?: string;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
   bookingPolicy: BookingPolicy;
   agentPolicy?: Partial<AgentPolicy>;
+  clientReminderPolicy?: Partial<ClientReminderPolicy>;
   faq: Record<string, string>;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
@@ -97,10 +104,13 @@ export class BusinessConfig {
   // Currency the business charges in: every price and deposit is expressed in it
   // unless a service overrides it.
   public readonly currency: Currency;
+  // ISO 3166-1 alpha-2 region for default phone parsing and display.
+  public readonly countryCode: string;
   public readonly logoUrl: string | null;
   public readonly whatsappPhone: string | null;
   public readonly bookingPolicy: BookingPolicy;
   public readonly agentPolicy: AgentPolicy;
+  public readonly clientReminderPolicy: ClientReminderPolicy;
   public readonly faq: Record<string, string>;
   public readonly evolutionInstanceId: string | null;
   public readonly evolutionInstanceName: string | null;
@@ -117,11 +127,15 @@ export class BusinessConfig {
     this.tone = props.tone;
     this.businessCategory = props.businessCategory ?? DEFAULT_BUSINESS_CATEGORY;
     this.currency = props.currency;
+    this.countryCode = props.countryCode ?? DEFAULT_COUNTRY_CODE;
     this.logoUrl = props.logoUrl ?? null;
     this.whatsappPhone = props.whatsappPhone ?? null;
     this.bookingPolicy = props.bookingPolicy;
     // Rows written before a policy field existed only carry part of the object.
     this.agentPolicy = { ...DEFAULT_AGENT_POLICY, ...props.agentPolicy };
+    this.clientReminderPolicy = mergeClientReminderPolicy(
+      props.clientReminderPolicy,
+    );
     this.faq = props.faq;
     this.evolutionInstanceId = props.evolutionInstanceId ?? null;
     this.evolutionInstanceName = props.evolutionInstanceName ?? null;

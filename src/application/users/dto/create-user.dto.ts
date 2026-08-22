@@ -4,7 +4,7 @@ import {
   IsEnum,
   IsOptional,
   IsString,
-  Matches,
+  MaxLength,
   MinLength,
 } from 'class-validator';
 
@@ -31,8 +31,9 @@ export class CreateUserDto {
   @IsEnum(TENANT_ROLES)
   role: Role;
 
-  @ApiProperty({ example: '+59171234567', required: false })
+  @ApiProperty({ example: '71234567', required: false })
   @IsOptional()
-  @Matches(/^\+?[0-9]{8,15}$/)
+  @IsString()
+  @MaxLength(20)
   phone?: string;
 }

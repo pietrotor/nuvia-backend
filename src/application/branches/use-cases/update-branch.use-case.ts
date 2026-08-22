@@ -10,6 +10,8 @@ import {
   UpdateBranchData,
 } from '@domain/branches/repositories/branch.repository';
 import { assertValidWeeklyHours } from '@domain/business-config/services/e1-config-validator';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 
 import { UpdateBranchDto } from '../dto/update-branch.dto';
 import { slugifyBranchName } from '../services/branch-slug';
@@ -20,6 +22,8 @@ export class UpdateBranchUseCase {
     @Inject(BRANCH_REPOSITORY)
     private readonly branchRepository: BranchRepository,
     private readonly audit: AuditRecorder,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
 
   async execute(id: string, dto: UpdateBranchDto): Promise<Branch> {
@@ -34,7 +38,8 @@ export class UpdateBranchUseCase {
       await this.demoteCurrentPrimary(id);
     }
 
-    const data = this.normalize(dto);
+    const country = await this.tenantCountry.getCurrentCountryCode();
+    const data = this.normalize(dto, current.phone, country);
     const updated = await this.branchRepository.update(id, data);
     if (!updated) throw new BranchNotFoundError(id);
 
@@ -49,11 +54,23 @@ export class UpdateBranchUseCase {
     return updated;
   }
 
-  private normalize(dto: UpdateBranchDto): UpdateBranchData {
+  private normalize(
+    dto: UpdateBranchDto,
+    currentPhone: string | null,
+    country: string,
+  ): UpdateBranchData {
     const data: UpdateBranchData = {
       ...dto,
       name: dto.name?.trim(),
       slug: dto.slug?.trim(),
+      phone:
+        dto.phone === undefined
+          ? undefined
+          : this.phoneNumbers.resolvePhoneForWrite(
+              dto.phone,
+              currentPhone,
+              country,
+            ),
     };
 
     if (dto.name !== undefined && dto.slug === undefined) {

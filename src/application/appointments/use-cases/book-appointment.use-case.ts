@@ -11,6 +11,8 @@ import {
   Appointment,
   AppointmentStatus,
 } from '@domain/appointments/entities/appointment.entity';
+import { ClientNameRequiredError } from '@domain/appointments/exceptions/appointment.exceptions';
+import { collectBookingAnswers } from '@domain/appointments/services/collect-booking-answers';
 import {
   CLIENT_REPOSITORY,
   ClientRepository,
@@ -19,6 +21,12 @@ import { BookingActor } from '@domain/appointments/value-objects/booking-actor.v
 import { ClientNotFoundError } from '@domain/clients/exceptions/client.exceptions';
 import { BookAppointmentDto } from '../dto/book-appointment.dto';
 import { AppointmentSlotValidator } from '../services/appointment-slot-validator.service';
+import { AppointmentNotificationPublisher } from '@application/appointment-notifications/services/appointment-notification.publisher';
+import { AppointmentReminderPublisher } from '@application/reminders/services/appointment-reminder.publisher';
+import {
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '@domain/common/ports/transaction.port';
 
 @Injectable()
 export class BookAppointmentUseCase {
@@ -30,14 +38,26 @@ export class BookAppointmentUseCase {
     private readonly slotValidator: AppointmentSlotValidator,
     private readonly audit: AuditRecorder,
     private readonly agendaEvents: AgendaEventPublisher,
+    private readonly notifications: AppointmentNotificationPublisher,
+    private readonly reminders: AppointmentReminderPublisher,
+    @Inject(TRANSACTION_PORT)
+    private readonly transactions: TransactionPort,
   ) {}
 
   async execute(
     dto: BookAppointmentDto,
     actor: BookingActor = BookingActor.CLIENT,
   ): Promise<Appointment> {
-    const client = await this.clientRepository.findById(dto.clientId);
-    if (!client) throw new ClientNotFoundError(dto.clientId);
+    const attendee = await this.clientRepository.findById(dto.clientId);
+    if (!attendee) throw new ClientNotFoundError(dto.clientId);
+    if (!attendee.hasConfirmedName()) throw new ClientNameRequiredError();
+
+    const contactId = dto.bookingContactClientId ?? dto.clientId;
+    const contact =
+      contactId === attendee.id
+        ? attendee
+        : await this.clientRepository.findById(contactId);
+    if (!contact) throw new ClientNotFoundError(contactId);
 
     const slot = await this.slotValidator.validate({
       serviceId: dto.serviceId,
@@ -48,19 +68,31 @@ export class BookAppointmentUseCase {
       durationMinutes: dto.durationMinutes,
     });
 
-    const appointment = await this.appointmentRepository.create({
-      branchId: slot.branch.id,
-      clientId: client.id,
-      professionalId: slot.professional.id,
-      serviceId: slot.service.id,
-      startsAt: slot.startsAt,
-      endsAt: slot.endsAt,
-      status: slot.service.requiresDeposit
-        ? AppointmentStatus.PENDING_DEPOSIT
-        : AppointmentStatus.CONFIRMED,
-      price: slot.effectiveService.price.amount,
-      currency: slot.effectiveService.price.currency,
-      depositAmount: slot.effectiveService.depositAmount?.amount ?? null,
+    const bookingAnswers = collectBookingAnswers(
+      slot.service.bookingQuestions,
+      dto.answers ?? [],
+    );
+
+    const appointment = await this.transactions.run(async () => {
+      const created = await this.appointmentRepository.create({
+        branchId: slot.branch.id,
+        clientId: attendee.id,
+        bookingContactClientId: contact.id,
+        professionalId: slot.professional.id,
+        serviceId: slot.service.id,
+        startsAt: slot.startsAt,
+        endsAt: slot.endsAt,
+        status: slot.service.requiresDeposit
+          ? AppointmentStatus.PENDING_DEPOSIT
+          : AppointmentStatus.CONFIRMED,
+        price: slot.effectiveService.price.amount,
+        currency: slot.effectiveService.price.currency,
+        depositAmount: slot.effectiveService.depositAmount?.amount ?? null,
+        bookingAnswers,
+      });
+      await this.notifications.recordBooked(created);
+      await this.reminders.syncPreVisit(created);
+      return created;
     });
 
     await this.audit.record({
@@ -69,6 +101,8 @@ export class BookAppointmentUseCase {
       entityId: appointment.id,
       after: {
         branchId: appointment.branchId,
+        clientId: appointment.clientId,
+        bookingContactClientId: appointment.bookingContactClientId,
         professionalId: appointment.professionalId,
         serviceId: appointment.serviceId,
         startsAt: appointment.startsAt,

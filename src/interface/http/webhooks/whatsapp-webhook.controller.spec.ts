@@ -17,6 +17,7 @@ describe('WhatsAppWebhookController', () => {
 
   let repository: jest.Mocked<BusinessConfigRepository>;
   let queue: jest.Mocked<Queue<InboundMessageJob>>;
+  let notificationQueue: jest.Mocked<Queue>;
   let controller: WhatsAppWebhookController;
 
   beforeEach(() => {
@@ -26,12 +27,17 @@ describe('WhatsAppWebhookController', () => {
     queue = {
       add: jest.fn().mockResolvedValue({}),
     } as unknown as jest.Mocked<Queue<InboundMessageJob>>;
+    notificationQueue = {
+      add: jest.fn().mockResolvedValue({}),
+    } as unknown as jest.Mocked<Queue>;
     controller = new WhatsAppWebhookController(
       {
         get: jest.fn().mockReturnValue('shared-secret'),
       } as unknown as ConfigService,
       repository,
       queue,
+      notificationQueue,
+      { parseStatusUpdates: jest.fn().mockReturnValue([]) } as never,
     );
   });
 
@@ -143,5 +149,47 @@ describe('WhatsAppWebhookController', () => {
 
       expect(queue.add).not.toHaveBeenCalled();
     });
+  });
+
+  it('enqueues delivery status updates from MESSAGES_UPDATE', async () => {
+    const parser = {
+      parseStatusUpdates: jest.fn().mockReturnValue([
+        {
+          providerMessageId: 'wamid.out',
+          status: 'DELIVERY_ACK',
+          statusCode: null,
+        },
+      ]),
+    };
+    controller = new WhatsAppWebhookController(
+      {
+        get: jest.fn().mockReturnValue('shared-secret'),
+      } as unknown as ConfigService,
+      repository,
+      queue,
+      notificationQueue,
+      parser as never,
+    );
+
+    await controller.handle('shared-secret', {
+      event: 'messages.update',
+      instance: 'nuvi-tenant',
+      apikey: token,
+      data: [{ key: { id: 'wamid.out' }, status: 'DELIVERY_ACK' }],
+    });
+
+    expect(queue.add).not.toHaveBeenCalled();
+    expect(notificationQueue.add).toHaveBeenCalledWith(
+      'notification-status',
+      {
+        tenantId: 'tenant-id',
+        providerMessageId: 'wamid.out',
+        status: 'DELIVERY_ACK',
+        statusCode: null,
+      },
+      expect.objectContaining({
+        jobId: 'tenant-id-status-wamid.out-DELIVERY_ACK',
+      }),
+    );
   });
 });

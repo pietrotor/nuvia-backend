@@ -1,5 +1,15 @@
 import { Currency } from '@domain/common/value-objects/currency.vo';
 import { Service } from '../entities/service.entity';
+import { BookingQuestionKind } from '../value-objects/booking-question-kind.vo';
+
+export interface ServiceBookingQuestionInput {
+  id?: string;
+  prompt: string;
+  kind: BookingQuestionKind;
+  isRequired: boolean;
+  sortOrder: number;
+  isActive?: boolean;
+}
 
 export interface CreateServiceData {
   name: string;
@@ -15,6 +25,7 @@ export interface CreateServiceData {
   clientChoosesProfessional?: boolean;
   professionalIds: string[];
   isActive?: boolean;
+  bookingQuestions?: ServiceBookingQuestionInput[];
 }
 
 export interface UpdateServiceData {
@@ -31,6 +42,7 @@ export interface UpdateServiceData {
   clientChoosesProfessional?: boolean;
   professionalIds?: string[];
   isActive?: boolean;
+  bookingQuestions?: ServiceBookingQuestionInput[];
 }
 
 export interface ServiceRepository {

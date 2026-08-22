@@ -1,5 +1,8 @@
 import { Module } from '@nestjs/common';
 
+import { AppointmentNotificationsModule } from '@application/appointment-notifications/appointment-notifications.module';
+import { DepositsApplicationModule } from '@application/deposits/deposits-application.module';
+import { RemindersModule } from '@application/reminders/reminders.module';
 import { BookAppointmentUseCase } from '@application/appointments/use-cases/book-appointment.use-case';
 import { CancelAppointmentUseCase } from '@application/appointments/use-cases/cancel-appointment.use-case';
 import { FindAvailabilityOptionsUseCase } from '@application/appointments/use-cases/find-availability-options.use-case';
@@ -16,6 +19,11 @@ import { ScheduleContextResolver } from '@application/appointments/services/sche
 import { AppointmentsController } from './appointments.controller';
 
 @Module({
+  imports: [
+    AppointmentNotificationsModule,
+    RemindersModule,
+    DepositsApplicationModule,
+  ],
   controllers: [AppointmentsController],
   providers: [
     ScheduleContextResolver,
@@ -35,6 +43,7 @@ import { AppointmentsController } from './appointments.controller';
   exports: [
     BookAppointmentUseCase,
     FindAvailabilityOptionsUseCase,
+    GetAppointmentUseCase,
     GetAvailabilityUseCase,
     ListClientAppointmentsUseCase,
     ListProfessionalAppointmentsUseCase,

@@ -13,10 +13,44 @@ import {
   MaxLength,
   Min,
   MinLength,
+  ValidateNested,
 } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { BookingQuestionKind } from '@domain/services/value-objects/booking-question-kind.vo';
+
+export class ServiceBookingQuestionDto {
+  @ApiProperty({ required: false })
+  @IsOptional()
+  @IsUUID()
+  id?: string;
+
+  @ApiProperty({ example: '¿Qué zona querés tratar?' })
+  @IsString()
+  @MinLength(2)
+  @MaxLength(500)
+  prompt: string;
+
+  @ApiProperty({ enum: BookingQuestionKind })
+  @IsEnum(BookingQuestionKind)
+  kind: BookingQuestionKind;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  isRequired: boolean;
+
+  @ApiProperty({ example: 0 })
+  @IsInt()
+  @Min(0)
+  sortOrder: number;
+
+  @ApiProperty({ required: false, default: true })
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
 
 export class CreateServiceDto {
   @ApiProperty({ example: 'Limpieza facial' })
@@ -117,4 +151,11 @@ export class CreateServiceDto {
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;
+
+  @ApiProperty({ type: [ServiceBookingQuestionDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => ServiceBookingQuestionDto)
+  bookingQuestions?: ServiceBookingQuestionDto[];
 }

@@ -1,3 +1,10 @@
+export enum OutboundClass {
+  MANUAL = 'manual',
+  AGENT_REPLY = 'agent_reply',
+  TRANSACTIONAL = 'transactional',
+  INTERNAL_NOTIFICATION = 'internal_notification',
+}
+
 export interface SendTextMessageInput {
   tenantId: string;
   toE164: string;
@@ -5,6 +12,7 @@ export interface SendTextMessageInput {
   // Time the provider keeps the "typing…" indicator on before delivering.
   // Absent for messages the owner wrote by hand: those were already typed.
   typingDelayMs?: number;
+  outboundClass?: OutboundClass;
 }
 
 // Sending the bytes is what lets the same flow work whichever storage driver is
@@ -20,6 +28,7 @@ export interface SendMediaMessageInput {
   media: OutboundMedia;
   mimeType: string;
   caption?: string;
+  outboundClass?: OutboundClass;
 }
 
 export interface MarkAsReadInput {
@@ -34,6 +43,16 @@ export interface ShowTypingInput {
   durationMs: number;
 }
 
+export interface DownloadInboundMediaInput {
+  tenantId: string;
+  providerMessageId: string;
+}
+
+export interface InboundMedia {
+  bytes: Buffer;
+  mimeType: string;
+}
+
 export interface MessagingPort {
   sendText(input: SendTextMessageInput): Promise<SentMessage>;
   sendMedia(input: SendMediaMessageInput): Promise<SentMessage>;
@@ -41,6 +60,7 @@ export interface MessagingPort {
   // a read receipt on a conversation waiting for a human is a lie to the client.
   markAsRead(input: MarkAsReadInput): Promise<void>;
   showTyping(input: ShowTypingInput): Promise<void>;
+  downloadInboundMedia(input: DownloadInboundMediaInput): Promise<InboundMedia>;
 }
 
 export interface SentMessage {

@@ -15,6 +15,7 @@ import { AuthInfrastructureModule } from '@infrastructure/auth/auth-infrastructu
 import { PortsModule } from '@infrastructure/ports/ports.module';
 import { QueuesModule } from '@infrastructure/queues/queues.module';
 import { RealtimeModule } from '@infrastructure/realtime/realtime.module';
+import { ApplicationCommonModule } from '@application/common/application-common.module';
 import { AuditModule } from '@application/audit/audit.module';
 import { BranchesModule as BranchesCoreModule } from '@application/branches/branches.module';
 import { SubscriptionsModule } from '@application/subscriptions/subscriptions.module';
@@ -56,6 +57,7 @@ import { SubscriptionsHttpModule } from '@interface/http/subscriptions/subscript
     PortsModule,
     RealtimeModule,
 
+    ApplicationCommonModule,
     AuditModule,
     BranchesCoreModule,
     SubscriptionsModule,

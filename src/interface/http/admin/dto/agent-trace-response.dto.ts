@@ -189,10 +189,20 @@ export class ConversationTraceThreadResponseDto {
 
   static from(input: {
     messages: Message[];
+    quotedMessagesByProviderId: Map<string, Message>;
     traces: AgentTraceSummary[];
   }): ConversationTraceThreadResponseDto {
     return {
-      messages: input.messages.map(MessageResponseDto.from),
+      messages: input.messages.map((message) =>
+        MessageResponseDto.from(
+          message,
+          message.inReplyToProviderMessageId
+            ? (input.quotedMessagesByProviderId.get(
+                message.inReplyToProviderMessageId,
+              ) ?? null)
+            : null,
+        ),
+      ),
       traces: input.traces.map(AgentTraceSummaryResponseDto.from),
     };
   }

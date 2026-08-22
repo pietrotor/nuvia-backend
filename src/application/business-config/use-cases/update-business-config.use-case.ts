@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { sanitizeBusinessNotes } from '@domain/agent/prompt/sanitize-business-notes';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
@@ -14,7 +15,13 @@ import {
   UpdateBusinessConfigData,
 } from '@domain/business-config/repositories/business-config.repository';
 import {
+  assertValidClientReminderPolicy,
+  ClientReminderPolicy,
+  mergeClientReminderPolicy,
+} from '@domain/business-config/value-objects/client-reminder-policy.vo';
+import {
   AgentPolicyDto,
+  ClientReminderPolicyDto,
   UpdateBusinessConfigDto,
 } from '../dto/update-business-config.dto';
 
@@ -24,6 +31,7 @@ export class UpdateBusinessConfigUseCase {
     @Inject(BUSINESS_CONFIG_REPOSITORY)
     private readonly businessConfigRepository: BusinessConfigRepository,
     private readonly audit: AuditRecorder,
+    private readonly phoneNumbers: PhoneNumberService,
   ) {}
 
   async execute(dto: UpdateBusinessConfigDto): Promise<BusinessConfig> {
@@ -34,8 +42,25 @@ export class UpdateBusinessConfigUseCase {
       ...dto,
       slug: dto.slug?.trim(),
       agentName: dto.agentName?.trim(),
+      countryCode: dto.countryCode
+        ? this.phoneNumbers.assertCountryCode(dto.countryCode)
+        : undefined,
+      whatsappPhone:
+        dto.whatsappPhone === undefined
+          ? undefined
+          : this.phoneNumbers.resolvePhoneForWrite(
+              dto.whatsappPhone,
+              current.whatsappPhone,
+              dto.countryCode ?? current.countryCode,
+            ),
       agentPolicy: dto.agentPolicy
         ? this.mergeAgentPolicy(current.agentPolicy, dto.agentPolicy)
+        : undefined,
+      clientReminderPolicy: dto.clientReminderPolicy
+        ? this.mergeClientReminderPolicy(
+            current.clientReminderPolicy,
+            dto.clientReminderPolicy,
+          )
         : undefined,
     };
     const updated = await this.businessConfigRepository.update(data);
@@ -66,5 +91,14 @@ export class UpdateBusinessConfigUseCase {
           ? current.businessNotes
           : sanitizeBusinessNotes(patch.businessNotes),
     };
+  }
+
+  private mergeClientReminderPolicy(
+    current: ClientReminderPolicy,
+    patch: ClientReminderPolicyDto,
+  ): ClientReminderPolicy {
+    const merged = mergeClientReminderPolicy({ ...current, ...patch });
+    assertValidClientReminderPolicy(merged);
+    return merged;
   }
 }

@@ -1,0 +1,3 @@
+export const REMINDER_DISPATCH_BATCH_SIZE = 40;
+export const REMINDER_DISPATCH_PER_TENANT_CAP = 1;
+export const FALLBACK_REMINDER_TIMEZONE = 'America/La_Paz';

@@ -15,7 +15,9 @@ import { UpdateUserRoleDto } from '@application/users/dto/update-user-role.dto';
 import { CreateUserUseCase } from '@application/users/use-cases/create-user.use-case';
 import { ListUsersUseCase } from '@application/users/use-cases/list-users.use-case';
 import { UpdateUserRoleUseCase } from '@application/users/use-cases/update-user-role.use-case';
+import { UpdateUserContactUseCase } from '@application/users/use-cases/update-user-contact.use-case';
 import { DeactivateUserUseCase } from '@application/users/use-cases/deactivate-user.use-case';
+import { UpdateUserContactDto } from '@application/users/dto/update-user-contact.dto';
 import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '../common/decorators';
 import { UserResponseDto } from './dto/user-response.dto';
@@ -29,6 +31,7 @@ export class UsersController {
     private readonly createUser: CreateUserUseCase,
     private readonly listUsers: ListUsersUseCase,
     private readonly updateUserRole: UpdateUserRoleUseCase,
+    private readonly updateUserContact: UpdateUserContactUseCase,
     private readonly deactivateUser: DeactivateUserUseCase,
   ) {}
 
@@ -56,6 +59,18 @@ export class UsersController {
     @Body() dto: UpdateUserRoleDto,
   ): Promise<UserResponseDto> {
     return UserResponseDto.from(await this.updateUserRole.execute(id, dto));
+  }
+
+  @Patch(':id/contact')
+  @Auth(Permission.USERS_WRITE)
+  @ApiOperation({
+    summary: 'Updates the contact phone of a user of the business',
+  })
+  async updateContact(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpdateUserContactDto,
+  ): Promise<UserResponseDto> {
+    return UserResponseDto.from(await this.updateUserContact.execute(id, dto));
   }
 
   @Delete(':id')

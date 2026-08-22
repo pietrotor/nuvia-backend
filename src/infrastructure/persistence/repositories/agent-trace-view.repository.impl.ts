@@ -26,6 +26,9 @@ import { clients } from '../drizzle/schema/client.schema';
 import { conversations } from '../drizzle/schema/conversation.schema';
 import { TenantScopedRepository } from './tenant-scoped.repository';
 
+const escapeLikePattern = (term: string): string =>
+  term.replace(/[%_\\]/g, '\\$&');
+
 const ERROR_OUTCOMES: AgentTraceOutcome[] = [
   'failed',
   'handoff_claims',
@@ -46,14 +49,30 @@ export class DrizzleAgentTraceViewRepository
     limit: number;
     offset: number;
     search?: string;
+    searchTerms?: string[];
   }): Promise<AgentTracedConversationListResult> {
-    const search = input.search?.trim();
-    const searchCondition = search
-      ? or(
-          ilike(clients.name, `%${search}%`),
-          ilike(conversations.clientPhoneE164, `%${search}%`),
-        )
-      : undefined;
+    const term = input.search?.trim();
+    const patterns = new Set<string>();
+    if (term) {
+      patterns.add(`%${escapeLikePattern(term)}%`);
+    }
+    for (const searchTerm of input.searchTerms ?? []) {
+      const trimmed = searchTerm.trim();
+      if (!trimmed) continue;
+      patterns.add(`%${escapeLikePattern(trimmed)}%`);
+    }
+
+    const phoneConditions = [...patterns].map((pattern) =>
+      ilike(conversations.clientPhoneE164, pattern),
+    );
+    const namePattern = term ? `%${escapeLikePattern(term)}%` : undefined;
+    const searchCondition =
+      patterns.size > 0
+        ? or(
+            namePattern ? ilike(clients.name, namePattern) : undefined,
+            phoneConditions.length > 0 ? or(...phoneConditions) : undefined,
+          )
+        : undefined;
 
     const where = and(
       this.scope(conversations),

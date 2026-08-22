@@ -12,6 +12,7 @@ import { USER_BRANCH_REPOSITORY } from '@domain/branches/repositories/user-branc
 import { PROFESSIONAL_REPOSITORY } from '@domain/professionals/repositories/professional.repository';
 import { SERVICE_REPOSITORY } from '@domain/services/repositories/service.repository';
 import { DEPOSIT_QR_REPOSITORY } from '@domain/deposits/repositories/deposit-qr.repository';
+import { DEPOSIT_RECEIPT_REPOSITORY } from '@domain/deposits/repositories/deposit-receipt.repository';
 import { CLIENT_REPOSITORY } from '@domain/clients/repositories/client.repository';
 import { SCHEDULE_BLOCK_REPOSITORY } from '@domain/schedule-blocks/repositories/schedule-block.repository';
 import { APPOINTMENT_REPOSITORY } from '@domain/appointments/repositories/appointment.repository';
@@ -26,6 +27,12 @@ import { AGENT_USAGE_VIEW_REPOSITORY } from '@domain/subscriptions/repositories/
 import { PLAN_USAGE_VIEW_REPOSITORY } from '@domain/subscriptions/repositories/plan-usage.view-repository';
 import { AGENT_TRACE_REPOSITORY } from '@domain/agent/repositories/agent-trace.repository';
 import { AGENT_TRACE_VIEW_REPOSITORY } from '@domain/agent/repositories/agent-trace-view.repository';
+import { NOTIFICATION_CONTACT_REPOSITORY } from '@domain/appointment-notifications/repositories/notification-contact.repository';
+import { APPOINTMENT_NOTIFICATION_SUBSCRIPTION_REPOSITORY } from '@domain/appointment-notifications/repositories/appointment-notification-subscription.repository';
+import { APPOINTMENT_NOTIFICATION_EVENT_REPOSITORY } from '@domain/appointment-notifications/repositories/appointment-notification-event.repository';
+import { APPOINTMENT_NOTIFICATION_DELIVERY_REPOSITORY } from '@domain/appointment-notifications/repositories/appointment-notification-delivery.repository';
+import { APPOINTMENT_REMINDER_REPOSITORY } from '@domain/reminders/repositories/appointment-reminder.repository';
+import { TRANSACTION_PORT } from '@domain/common/ports/transaction.port';
 
 import { DrizzleTenantRepository } from './repositories/tenant.repository.impl';
 import { DrizzleUserRepository } from './repositories/user.repository.impl';
@@ -39,6 +46,7 @@ import { DrizzleUserBranchRepository } from './repositories/user-branch.reposito
 import { DrizzleProfessionalRepository } from './repositories/professional.repository.impl';
 import { DrizzleServiceRepository } from './repositories/service.repository.impl';
 import { DrizzleDepositQrRepository } from './repositories/deposit-qr.repository.impl';
+import { DrizzleDepositReceiptRepository } from './repositories/deposit-receipt.repository.impl';
 import { DrizzleClientRepository } from './repositories/client.repository.impl';
 import { DrizzleScheduleBlockRepository } from './repositories/schedule-block.repository.impl';
 import { DrizzleAppointmentRepository } from './repositories/appointment.repository.impl';
@@ -53,6 +61,12 @@ import { DrizzleAgentUsageViewRepository } from './repositories/agent-usage.view
 import { DrizzlePlanUsageViewRepository } from './repositories/plan-usage.view-repository.impl';
 import { DrizzleAgentTraceRepository } from './repositories/agent-trace.repository.impl';
 import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view.repository.impl';
+import { DrizzleNotificationContactRepository } from './repositories/notification-contact.repository.impl';
+import { DrizzleAppointmentNotificationSubscriptionRepository } from './repositories/appointment-notification-subscription.repository.impl';
+import { DrizzleAppointmentNotificationEventRepository } from './repositories/appointment-notification-event.repository.impl';
+import { DrizzleAppointmentNotificationDeliveryRepository } from './repositories/appointment-notification-delivery.repository.impl';
+import { DrizzleAppointmentReminderRepository } from './repositories/appointment-reminder.repository.impl';
+import { DrizzleTransactionAdapter } from './drizzle-transaction.adapter';
 
 @Global()
 @Module({
@@ -101,6 +115,10 @@ import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view
       useClass: DrizzleAppointmentRepository,
     },
     {
+      provide: DEPOSIT_RECEIPT_REPOSITORY,
+      useClass: DrizzleDepositReceiptRepository,
+    },
+    {
       provide: APPOINTMENT_VIEW_REPOSITORY,
       useClass: DrizzleAppointmentViewRepository,
     },
@@ -134,6 +152,27 @@ import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view
       provide: AGENT_TRACE_VIEW_REPOSITORY,
       useClass: DrizzleAgentTraceViewRepository,
     },
+    {
+      provide: NOTIFICATION_CONTACT_REPOSITORY,
+      useClass: DrizzleNotificationContactRepository,
+    },
+    {
+      provide: APPOINTMENT_NOTIFICATION_SUBSCRIPTION_REPOSITORY,
+      useClass: DrizzleAppointmentNotificationSubscriptionRepository,
+    },
+    {
+      provide: APPOINTMENT_NOTIFICATION_EVENT_REPOSITORY,
+      useClass: DrizzleAppointmentNotificationEventRepository,
+    },
+    {
+      provide: APPOINTMENT_NOTIFICATION_DELIVERY_REPOSITORY,
+      useClass: DrizzleAppointmentNotificationDeliveryRepository,
+    },
+    {
+      provide: APPOINTMENT_REMINDER_REPOSITORY,
+      useClass: DrizzleAppointmentReminderRepository,
+    },
+    { provide: TRANSACTION_PORT, useClass: DrizzleTransactionAdapter },
   ],
   exports: [
     TENANT_REPOSITORY,
@@ -152,6 +191,7 @@ import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view
     SCHEDULE_BLOCK_REPOSITORY,
     SCHEDULE_BLOCK_VIEW_REPOSITORY,
     APPOINTMENT_REPOSITORY,
+    DEPOSIT_RECEIPT_REPOSITORY,
     APPOINTMENT_VIEW_REPOSITORY,
     CONVERSATION_REPOSITORY,
     CONVERSATION_VIEW_REPOSITORY,
@@ -162,6 +202,12 @@ import { DrizzleAgentTraceViewRepository } from './repositories/agent-trace-view
     PLAN_USAGE_VIEW_REPOSITORY,
     AGENT_TRACE_REPOSITORY,
     AGENT_TRACE_VIEW_REPOSITORY,
+    NOTIFICATION_CONTACT_REPOSITORY,
+    APPOINTMENT_NOTIFICATION_SUBSCRIPTION_REPOSITORY,
+    APPOINTMENT_NOTIFICATION_EVENT_REPOSITORY,
+    APPOINTMENT_NOTIFICATION_DELIVERY_REPOSITORY,
+    APPOINTMENT_REMINDER_REPOSITORY,
+    TRANSACTION_PORT,
   ],
 })
 export class PersistenceModule {}

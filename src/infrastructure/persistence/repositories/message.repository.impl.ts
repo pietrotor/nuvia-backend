@@ -1,7 +1,10 @@
 import { Injectable } from '@nestjs/common';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray } from 'drizzle-orm';
 
-import { Message } from '@domain/conversations/entities/message.entity';
+import {
+  Message,
+  MessageDirection,
+} from '@domain/conversations/entities/message.entity';
 import {
   MessageRepository,
   RecordMessageData,
@@ -75,9 +78,31 @@ export class DrizzleMessageRepository
         and(
           eq(messages.tenantId, this.tenantId),
           eq(messages.inReplyToProviderMessageId, providerMessageId),
+          eq(messages.direction, MessageDirection.OUTBOUND),
         ),
       )
       .limit(1);
     return Boolean(row);
+  }
+
+  async findByProviderMessageId(
+    providerMessageId: string,
+  ): Promise<Message | null> {
+    const [row] = await this.selectFrom(
+      messages,
+      eq(messages.providerMessageId, providerMessageId),
+    );
+    return row ? MessageMapper.toDomain(row) : null;
+  }
+
+  async findByProviderMessageIds(
+    providerMessageIds: string[],
+  ): Promise<Message[]> {
+    if (providerMessageIds.length === 0) return [];
+    const rows = await this.selectFrom(
+      messages,
+      inArray(messages.providerMessageId, providerMessageIds),
+    );
+    return rows.map(MessageMapper.toDomain);
   }
 }

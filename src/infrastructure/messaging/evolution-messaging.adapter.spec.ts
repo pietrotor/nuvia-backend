@@ -54,7 +54,10 @@ describe('EvolutionMessagingAdapter', () => {
   it('delivers without the indicator when the provider refuses it', async () => {
     client.post
       .mockRejectedValueOnce(
-        new InternalError(ErrorCode.EVOLUTION_API_ERROR, { status: 400 }),
+        new InternalError(ErrorCode.EVOLUTION_API_ERROR, {
+          status: 400,
+          body: 'Cannot send presence to @lid contact',
+        }),
       )
       .mockResolvedValue({ key: { id: 'wamid.out' } });
 
@@ -73,6 +76,21 @@ describe('EvolutionMessagingAdapter', () => {
   it('does not send twice when the first attempt only timed out', async () => {
     client.post.mockRejectedValue(
       new InternalError(ErrorCode.EVOLUTION_API_ERROR, { cause: 'timeout' }),
+    );
+
+    await expect(
+      adapter.sendText({ ...target, text: 'Hola', typingDelayMs: 4_000 }),
+    ).rejects.toBeInstanceOf(InternalError);
+
+    expect(client.post).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not retry a generic 400 that is not a presence or LID rejection', async () => {
+    client.post.mockRejectedValue(
+      new InternalError(ErrorCode.EVOLUTION_API_ERROR, {
+        status: 400,
+        body: 'invalid number',
+      }),
     );
 
     await expect(

@@ -19,6 +19,14 @@ import {
   ApiTags,
 } from '@nestjs/swagger';
 
+import { AddBranchNotificationObserverDto } from '@application/appointment-notifications/dto/add-branch-notification-observer.dto';
+import { AddBranchNotificationObserverUseCase } from '@application/appointment-notifications/use-cases/add-branch-notification-observer.use-case';
+import { DisableNotificationSubscriptionUseCase } from '@application/appointment-notifications/use-cases/disable-notification-subscription.use-case';
+import { ListBranchNotificationObserversUseCase } from '@application/appointment-notifications/use-cases/list-branch-notification-observers.use-case';
+import { NotificationSettingsView } from '@application/appointment-notifications/dto/notification-subscription-view';
+import { NotificationSubscriptionView } from '@application/appointment-notifications/dto/notification-subscription-view';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { AssignProfessionalToBranchDto } from '@application/branches/dto/assign-professional-to-branch.dto';
 import { CreateBranchDto } from '@application/branches/dto/create-branch.dto';
 import { ListBranchesDto } from '@application/branches/dto/list-branches.dto';
@@ -40,6 +48,10 @@ import { UpdateBranchUseCase } from '@application/branches/use-cases/update-bran
 import { UpsertBranchProfessionalServiceWindowUseCase } from '@application/branches/use-cases/upsert-branch-professional-service-window.use-case';
 import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
+import {
+  NotificationSettingsResponseDto,
+  NotificationSubscriptionResponseDto,
+} from '@interface/http/appointment-notifications/dto/notification-subscription-response.dto';
 
 import { BranchProfessionalResponseDto } from './dto/branch-professional-response.dto';
 import { BranchProfessionalServiceWindowResponseDto } from './dto/branch-professional-service-window-response.dto';
@@ -64,7 +76,35 @@ export class BranchesController {
     private readonly listServiceWindows: ListBranchProfessionalServiceWindowsUseCase,
     private readonly upsertServiceWindow: UpsertBranchProfessionalServiceWindowUseCase,
     private readonly removeServiceWindow: RemoveBranchProfessionalServiceWindowUseCase,
+    private readonly listBranchNotifications: ListBranchNotificationObserversUseCase,
+    private readonly addBranchNotificationObserver: AddBranchNotificationObserverUseCase,
+    private readonly disableNotificationSubscription: DisableNotificationSubscriptionUseCase,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
+
+  private async toNotificationSettings(
+    view: NotificationSettingsView,
+  ): Promise<NotificationSettingsResponseDto> {
+    const countryCode = await this.tenantCountry.getCurrentCountryCode();
+    return NotificationSettingsResponseDto.from(view, {
+      countryCode,
+      formatMasked: (phone) =>
+        this.phoneNumbers.formatMaskedForDisplay(phone, countryCode),
+    });
+  }
+
+  private async toNotificationSubscription(
+    view: NotificationSubscriptionView,
+  ): Promise<NotificationSubscriptionResponseDto> {
+    const countryCode = await this.tenantCountry.getCurrentCountryCode();
+    return NotificationSubscriptionResponseDto.from(view, {
+      maskedPhone: this.phoneNumbers.formatMaskedForDisplay(
+        view.contact.phoneE164,
+        countryCode,
+      ),
+    });
+  }
 
   @Get()
   @Auth(Permission.BRANCHES_READ)
@@ -252,5 +292,53 @@ export class BranchesController {
     return BranchProfessionalServiceWindowResponseDto.from(
       await this.removeServiceWindow.execute(id, professionalId, serviceId),
     );
+  }
+
+  @Get(':id/notifications')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_READ)
+  @ApiOperation({
+    summary:
+      'Lists observer contacts for appointment notifications at a branch',
+  })
+  @ApiResponse({ status: 200, type: NotificationSettingsResponseDto })
+  async listNotifications(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<NotificationSettingsResponseDto> {
+    return this.toNotificationSettings(
+      await this.listBranchNotifications.execute(id),
+    );
+  }
+
+  @Post(':id/notifications')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)
+  @HttpCode(HttpStatus.CREATED)
+  @ApiOperation({
+    summary: 'Adds an observer WhatsApp contact for a branch',
+  })
+  @ApiResponse({ status: 201, type: NotificationSubscriptionResponseDto })
+  async addObserver(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AddBranchNotificationObserverDto,
+  ): Promise<NotificationSubscriptionResponseDto> {
+    return this.toNotificationSubscription(
+      await this.addBranchNotificationObserver.execute(id, dto),
+    );
+  }
+
+  @Delete(':id/notifications/:subscriptionId')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Disables a branch observer notification subscription',
+  })
+  @ApiResponse({ status: 204 })
+  async disableObserver(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('subscriptionId', ParseUUIDPipe) subscriptionId: string,
+  ): Promise<void> {
+    await this.disableNotificationSubscription.execute({
+      subscriptionId,
+      branchId: id,
+    });
   }
 }

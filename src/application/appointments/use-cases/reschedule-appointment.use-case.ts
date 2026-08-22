@@ -15,6 +15,12 @@ import { CLOCK_PORT, ClockPort } from '@domain/common/ports/clock.port';
 import { RescheduleAppointmentDto } from '../dto/reschedule-appointment.dto';
 import { AppointmentSlotValidator } from '../services/appointment-slot-validator.service';
 import { minutesBetween } from '../services/resolve-appointment-duration';
+import { AppointmentNotificationPublisher } from '@application/appointment-notifications/services/appointment-notification.publisher';
+import { AppointmentReminderPublisher } from '@application/reminders/services/appointment-reminder.publisher';
+import {
+  TRANSACTION_PORT,
+  TransactionPort,
+} from '@domain/common/ports/transaction.port';
 
 export interface RescheduleAppointmentOptions {
   // Narrows the operation to a single client's appointments: the agent may only
@@ -41,6 +47,10 @@ export class RescheduleAppointmentUseCase {
     private readonly clock: ClockPort,
     private readonly audit: AuditRecorder,
     private readonly agendaEvents: AgendaEventPublisher,
+    private readonly notifications: AppointmentNotificationPublisher,
+    private readonly reminders: AppointmentReminderPublisher,
+    @Inject(TRANSACTION_PORT)
+    private readonly transactions: TransactionPort,
   ) {}
 
   async execute(
@@ -74,14 +84,22 @@ export class RescheduleAppointmentUseCase {
     const nextDeposit = slot.effectiveService.depositAmount?.amount ?? null;
     const depositRequiresReview = previousDeposit !== nextDeposit;
 
-    const appointment = await this.appointmentRepository.save(
-      current.rescheduleTo(slot.startsAt, slot.endsAt, {
-        professionalId: slot.professional.id,
-        branchId: slot.branch.id,
-        price: slot.effectiveService.price,
-        depositAmount: slot.effectiveService.depositAmount,
-      }),
-    );
+    const appointment = await this.transactions.run(async () => {
+      const saved = await this.appointmentRepository.save(
+        current.rescheduleTo(slot.startsAt, slot.endsAt, {
+          professionalId: slot.professional.id,
+          branchId: slot.branch.id,
+          price: slot.effectiveService.price,
+          depositAmount: slot.effectiveService.depositAmount,
+        }),
+      );
+      await this.notifications.recordRescheduled({
+        previous: current,
+        current: saved,
+      });
+      await this.reminders.syncPreVisit(saved);
+      return saved;
+    });
 
     await this.audit.record({
       action: AuditAction.APPOINTMENT_RESCHEDULED,

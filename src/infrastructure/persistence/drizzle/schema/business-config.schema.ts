@@ -15,6 +15,7 @@ import {
   AgentPolicy,
   BookingPolicy,
 } from '@domain/business-config/entities/business-config.entity';
+import { ClientReminderPolicy } from '@domain/business-config/value-objects/client-reminder-policy.vo';
 
 import { currencyEnum } from './currency.schema';
 import { tenants } from './tenant.schema';
@@ -42,10 +43,14 @@ export const businessConfigs = pgTable(
       .notNull()
       .default('default'),
     currency: currencyEnum('currency').notNull().default('BOB'),
+    countryCode: varchar('country_code', { length: 2 }).notNull().default('BO'),
     logoUrl: text('logo_url'),
     whatsappPhone: varchar('whatsapp_phone', { length: 20 }),
     bookingPolicy: jsonb('booking_policy').$type<BookingPolicy>().notNull(),
     agentPolicy: jsonb('agent_policy').$type<AgentPolicy>().notNull(),
+    clientReminderPolicy: jsonb('client_reminder_policy')
+      .$type<ClientReminderPolicy>()
+      .notNull(),
     faq: jsonb('faq').$type<Record<string, string>>().notNull().default({}),
     evolutionInstanceId: varchar('evolution_instance_id', { length: 255 }),
     evolutionInstanceName: varchar('evolution_instance_name', { length: 255 }),

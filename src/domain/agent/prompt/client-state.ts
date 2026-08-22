@@ -7,6 +7,7 @@ export interface ClientStateAppointment {
   professional: string;
   whenLabel: string;
   awaitingDeposit: boolean;
+  attendeeName?: string | null;
 }
 
 export function renderClientState(
@@ -21,8 +22,10 @@ export function renderClientState(
     ...appointments.map(
       (appointment) =>
         `- ${appointment.service} con ${appointment.professional}, ${appointment.whenLabel}${
-          appointment.awaitingDeposit ? ' (esperando la seña)' : ''
-        }`,
+          appointment.attendeeName
+            ? ` a nombre de ${appointment.attendeeName}`
+            : ''
+        }${appointment.awaitingDeposit ? ' (esperando la seña)' : ''}`,
     ),
   ].join('\n');
 }

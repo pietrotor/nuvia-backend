@@ -16,6 +16,7 @@ export interface MessageProps {
   conversationId: string;
   providerMessageId: string;
   inReplyToProviderMessageId: string | null;
+  relatedAppointmentId?: string | null;
   direction: MessageDirection;
   kind: MessageKind;
   content: string | null;
@@ -29,6 +30,7 @@ export class Message {
   public readonly conversationId: string;
   public readonly providerMessageId: string;
   public readonly inReplyToProviderMessageId: string | null;
+  public readonly relatedAppointmentId: string | null;
   public readonly direction: MessageDirection;
   public readonly kind: MessageKind;
   public readonly content: string | null;
@@ -42,6 +44,7 @@ export class Message {
     this.conversationId = props.conversationId;
     this.providerMessageId = props.providerMessageId;
     this.inReplyToProviderMessageId = props.inReplyToProviderMessageId;
+    this.relatedAppointmentId = props.relatedAppointmentId ?? null;
     this.direction = props.direction;
     this.kind = props.kind;
     this.content = props.content;

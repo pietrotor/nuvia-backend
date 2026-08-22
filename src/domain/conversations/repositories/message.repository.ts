@@ -8,6 +8,7 @@ export interface RecordMessageData {
   conversationId: string;
   providerMessageId: string;
   inReplyToProviderMessageId?: string | null;
+  relatedAppointmentId?: string | null;
   direction: MessageDirection;
   kind: MessageKind;
   content: string | null;
@@ -23,6 +24,8 @@ export interface MessageRepository {
     conversationId: string,
     input: { limit: number; offset: number },
   ): Promise<Message[]>;
+  findByProviderMessageId(providerMessageId: string): Promise<Message | null>;
+  findByProviderMessageIds(providerMessageIds: string[]): Promise<Message[]>;
 }
 
 export const MESSAGE_REPOSITORY = 'MessageRepository';

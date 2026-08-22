@@ -8,6 +8,7 @@ import {
   index,
   uniqueIndex,
 } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
 import { tenants } from './tenant.schema';
 
@@ -18,8 +19,9 @@ export const clients = pgTable(
     tenantId: uuid('tenant_id')
       .notNull()
       .references(() => tenants.id, { onDelete: 'cascade' }),
-    name: varchar('name', { length: 255 }).notNull(),
-    phoneE164: varchar('phone_e164', { length: 20 }).notNull(),
+    name: varchar('name', { length: 255 }),
+    phoneE164: varchar('phone_e164', { length: 20 }),
+    whatsappProfileName: varchar('whatsapp_profile_name', { length: 255 }),
     email: varchar('email', { length: 320 }),
     birthDate: date('birth_date'),
     identificationType: varchar('identification_type', { length: 50 }),
@@ -36,7 +38,9 @@ export const clients = pgTable(
   },
   (t) => [
     index('clients_tenant_idx').on(t.tenantId),
-    uniqueIndex('clients_tenant_phone_uq').on(t.tenantId, t.phoneE164),
+    uniqueIndex('clients_tenant_phone_uq')
+      .on(t.tenantId, t.phoneE164)
+      .where(sql`${t.phoneE164} is not null`),
   ],
 );
 

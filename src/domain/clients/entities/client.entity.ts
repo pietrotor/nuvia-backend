@@ -1,8 +1,11 @@
+import { hasConfirmedClientName } from '../services/confirmed-client-name';
+
 export interface ClientProps {
   id: string;
   tenantId: string;
-  name: string;
-  phoneE164: string;
+  name: string | null;
+  phoneE164: string | null;
+  whatsappProfileName?: string | null;
   email?: string | null;
   birthDate?: string | null;
   identificationType?: string | null;
@@ -16,8 +19,9 @@ export interface ClientProps {
 export class Client {
   public readonly id: string;
   public readonly tenantId: string;
-  public readonly name: string;
-  public readonly phoneE164: string;
+  public readonly name: string | null;
+  public readonly phoneE164: string | null;
+  public readonly whatsappProfileName: string | null;
   public readonly email: string | null;
   public readonly birthDate: string | null;
   public readonly identificationType: string | null;
@@ -32,6 +36,7 @@ export class Client {
     this.tenantId = props.tenantId;
     this.name = props.name;
     this.phoneE164 = props.phoneE164;
+    this.whatsappProfileName = props.whatsappProfileName ?? null;
     this.email = props.email ?? null;
     this.birthDate = props.birthDate ?? null;
     this.identificationType = props.identificationType ?? null;
@@ -40,5 +45,13 @@ export class Client {
     this.notes = props.notes;
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
+  }
+
+  hasConfirmedName(): boolean {
+    return hasConfirmedClientName(this.name);
+  }
+
+  withName(name: string): Client {
+    return new Client({ ...this, name });
   }
 }

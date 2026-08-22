@@ -32,6 +32,7 @@ import { LOGGER_PORT, LoggerPort } from '@domain/common/ports/logger.port';
 import {
   Message,
   MessageDirection,
+  MessageKind,
 } from '@domain/conversations/entities/message.entity';
 import {
   CONVERSATION_REPOSITORY,
@@ -157,7 +158,16 @@ export class AgentOrchestrator {
     const tenant = await this.tenants.findById(config.tenantId);
     const timezone = tenant?.timezone ?? FALLBACK_TIMEZONE;
     const branchId = await this.resolveBranchId(inbound);
-    const context: AgentContext = { ...inbound, timezone, branchId };
+    const triggerMessage = history.find(
+      (message) => message.providerMessageId === trigger.providerMessageId,
+    );
+    const context: AgentContext = {
+      ...inbound,
+      timezone,
+      branchId,
+      quotedProviderMessageId:
+        triggerMessage?.inReplyToProviderMessageId ?? null,
+    };
     const prompt = await this.promptComposer.compose({
       config,
       timezone,
@@ -172,15 +182,13 @@ export class AgentOrchestrator {
       messages: [
         { role: 'system', content: prompt.staticText, cacheable: true },
         { role: 'system', content: prompt.volatileText },
-        ...history
-          .filter((message) => message.content)
-          .map<LlmMessage>((message) => ({
-            role:
-              message.direction === MessageDirection.INBOUND
-                ? 'user'
-                : 'assistant',
-            content: message.content ?? '',
-          })),
+        ...history.map<LlmMessage>((message) => ({
+          role:
+            message.direction === MessageDirection.INBOUND
+              ? 'user'
+              : 'assistant',
+          content: this.messageForModel(message, history),
+        })),
       ],
       followUps: [],
       evidence: [],
@@ -211,6 +219,45 @@ export class AgentOrchestrator {
     };
   }
 
+  private messageForModel(message: Message, history: Message[]): string {
+    const content = this.modelMessageContent(message);
+    // Every outbound row carries the inbound it answers, for idempotency. Only a
+    // client who quoted a message in WhatsApp is really replying to something, and
+    // prefixing our own turns taught the model to open its answers the same way.
+    if (
+      message.direction !== MessageDirection.INBOUND ||
+      !message.inReplyToProviderMessageId
+    ) {
+      return content;
+    }
+
+    const quoted = history.find(
+      (candidate) =>
+        candidate.providerMessageId === message.inReplyToProviderMessageId,
+    );
+    const quotedContent = quoted
+      ? this.modelMessageContent(quoted)
+      : 'mensaje anterior no disponible';
+    return `Respondiendo a: ${quotedContent.slice(0, 180)}\n${content}`;
+  }
+
+  private modelMessageContent(message: Message): string {
+    const notes: string[] = [];
+    if (message.kind === MessageKind.IMAGE) {
+      notes.push(`referencia de imagen: ${message.providerMessageId}`);
+    }
+    if (message.relatedAppointmentId) {
+      notes.push(`cita vinculada: ${message.relatedAppointmentId}`);
+    }
+
+    const body =
+      message.content ??
+      (message.kind === MessageKind.IMAGE
+        ? 'Imagen/comprobante'
+        : `[${message.kind}]`);
+    return notes.length > 0 ? `${body} [${notes.join('; ')}]` : body;
+  }
+
   // Pin a branch when the conversation already has one, the client has an upcoming
   // appointment at one, or the tenant only has a single active location.
   private async resolveBranchId(
@@ -226,6 +273,7 @@ export class AgentOrchestrator {
     const upcoming = await this.listClientAppointments.execute({
       clientId: inbound.clientId,
       onlyUpcoming: true,
+      scope: 'managed',
     });
     const fromAppointment = upcoming.find(
       (view) => view.appointment.branchId !== null,

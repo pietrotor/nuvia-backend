@@ -1,3 +1,4 @@
+import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { AgentTraceDraft } from './agent-trace.draft';
 
 describe('AgentTraceDraft', () => {
@@ -105,6 +106,48 @@ describe('AgentTraceDraft', () => {
       expect(tool.truncated).toBe(true);
       expect(String(tool.arguments).endsWith('…')).toBe(true);
     }
+  });
+
+  it('records safe structured diagnostics when an LLM provider fails', () => {
+    const draft = new AgentTraceDraft({
+      tenantId: 'tenant-1',
+      conversationId: 'conversation-1',
+      triggerProviderMessageId: 'wamid.in',
+      inboundText: 'Quiero reservar',
+      startedAt,
+    });
+    draft.recordLlmRequest({
+      round: 0,
+      phase: 'initial',
+      toolChoice: 'auto',
+      messages: [{ role: 'user', content: 'Quiero reservar' }],
+    });
+
+    const trace = draft.fail({
+      error: new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: 'openrouter',
+        status: 502,
+        model: 'google/gemini-test',
+        error_type: 'provider_unavailable',
+        cause: 'network',
+        unsafe_body: 'must not be persisted',
+      }),
+      endedAt: new Date('2026-08-15T12:00:01.000Z'),
+    });
+
+    expect(trace.steps).toContainEqual({
+      type: 'llm_error',
+      round: 0,
+      phase: 'initial',
+      code: ErrorCode.LLM_PROVIDER_ERROR,
+      provider: 'openrouter',
+      status: 502,
+      model: 'google/gemini-test',
+      errorType: 'provider_unavailable',
+      cause: 'network',
+    });
+    expect(JSON.stringify(trace.steps)).not.toContain('must not be persisted');
+    expect(trace.errorCount).toBe(1);
   });
 
   it('builds a skipped trace without a loop', () => {

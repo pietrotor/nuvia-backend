@@ -16,6 +16,12 @@ export class MessageResponseDto {
   @ApiPropertyOptional({ nullable: true })
   inReplyToProviderMessageId: string | null;
 
+  @ApiPropertyOptional({ enum: MessageKind, nullable: true })
+  quotedKind: MessageKind | null;
+
+  @ApiPropertyOptional({ nullable: true })
+  quotedContent: string | null;
+
   @ApiProperty({ enum: MessageDirection })
   direction: MessageDirection;
 
@@ -28,11 +34,16 @@ export class MessageResponseDto {
   @ApiProperty()
   occurredAt: string;
 
-  static from(message: Message): MessageResponseDto {
+  static from(
+    message: Message,
+    quotedMessage: Message | null = null,
+  ): MessageResponseDto {
     return {
       id: message.id,
       providerMessageId: message.providerMessageId,
       inReplyToProviderMessageId: message.inReplyToProviderMessageId,
+      quotedKind: quotedMessage?.kind ?? null,
+      quotedContent: quotedMessage?.content ?? null,
       direction: message.direction,
       kind: message.kind,
       content: message.content,

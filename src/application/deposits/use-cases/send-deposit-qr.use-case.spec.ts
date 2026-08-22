@@ -112,6 +112,9 @@ describe('SendDepositQrUseCase', () => {
       messaging as unknown as MessagingPort,
       clock,
       logger,
+      {
+        findById: jest.fn().mockResolvedValue({ timezone: 'America/La_Paz' }),
+      } as never,
     );
   });
 
@@ -135,6 +138,7 @@ describe('SendDepositQrUseCase', () => {
     const caption = messaging.sendMedia.mock.calls[0][0].caption;
     expect(caption).toContain('Bs 50');
     expect(caption).toContain('Hidrafacial');
+    expect(caption).toContain('viernes 7 de agosto, 10:00');
     expect(messages.recordIfNew).toHaveBeenCalledWith(
       expect.objectContaining({
         conversationId: 'cv1',

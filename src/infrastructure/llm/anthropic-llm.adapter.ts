@@ -27,6 +27,11 @@ interface AnthropicMessage {
 }
 
 interface AnthropicResponse {
+  type?: string;
+  error?: {
+    type?: string;
+    message?: string;
+  };
   model?: string;
   stop_reason?: string | null;
   usage?: {
@@ -50,7 +55,9 @@ export class AnthropicLlmAdapter implements LlmPort {
     const apiKey = this.config.get<string>('LLM_API_KEY');
     const model = this.config.get<string>('LLM_MODEL');
     if (!baseUrl || !apiKey || !model) {
-      throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED);
+      throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED, {
+        provider: 'anthropic',
+      });
     }
 
     const temperature = resolveTemperature(this.config);
@@ -82,14 +89,24 @@ export class AnthropicLlmAdapter implements LlmPort {
         }),
         signal: AbortSignal.timeout(25_000),
       });
-      if (!response.ok) {
-        throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR);
+      const payload = await this.readPayload(response, model);
+      if (!response.ok || payload.type === 'error' || payload.error) {
+        throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+          provider: 'anthropic',
+          status: response.status,
+          model,
+          ...(payload.error?.type ? { error_type: payload.error.type } : {}),
+        });
       }
 
-      return this.toDomainResult((await response.json()) as AnthropicResponse);
+      return this.toDomainResult(payload, model);
     } catch (error) {
       if (error instanceof InternalError) throw error;
-      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR);
+      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: 'anthropic',
+        model,
+        cause: this.failureCause(error),
+      });
     }
   }
 
@@ -185,9 +202,37 @@ export class AnthropicLlmAdapter implements LlmPort {
     return result;
   }
 
-  private toDomainResult(payload: AnthropicResponse): LlmChatResult {
+  private async readPayload(
+    response: Response,
+    model: string,
+  ): Promise<AnthropicResponse> {
+    try {
+      return (await response.json()) as AnthropicResponse;
+    } catch {
+      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: 'anthropic',
+        status: response.status,
+        model,
+        cause: 'parse',
+      });
+    }
+  }
+
+  private failureCause(error: unknown): 'timeout' | 'network' {
+    return error instanceof Error && error.name === 'TimeoutError'
+      ? 'timeout'
+      : 'network';
+  }
+
+  private toDomainResult(
+    payload: AnthropicResponse,
+    configuredModel: string,
+  ): LlmChatResult {
     if (!payload.content) {
-      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR);
+      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: 'anthropic',
+        model: payload.model ?? configuredModel,
+      });
     }
     const text = payload.content
       .filter(

@@ -256,4 +256,25 @@ describe('OpenRouterLlmAdapter', () => {
       function: { name: 'book_appointment' },
     });
   });
+
+  it('identifies OpenRouter in provider failure diagnostics', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ choices: [] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+    );
+
+    await expect(
+      new OpenRouterLlmAdapter(buildConfig()).chat({
+        messages: [{ role: 'user', content: 'Hola' }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.LLM_PROVIDER_ERROR,
+      params: expect.objectContaining({
+        provider: 'openrouter',
+        status: 200,
+      }),
+    });
+  });
 });

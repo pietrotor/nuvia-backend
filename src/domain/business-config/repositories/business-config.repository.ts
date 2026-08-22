@@ -7,6 +7,7 @@ import {
   BookingPolicy,
 } from '../entities/business-config.entity';
 import { BusinessCategory } from '../value-objects/business-category.vo';
+import { ClientReminderPolicy } from '../value-objects/client-reminder-policy.vo';
 
 export interface CreateBusinessConfigData {
   slug: string;
@@ -14,10 +15,12 @@ export interface CreateBusinessConfigData {
   tone?: AgentTone;
   businessCategory?: BusinessCategory;
   currency?: Currency;
+  countryCode?: string;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
   bookingPolicy: BookingPolicy;
   agentPolicy?: AgentPolicy;
+  clientReminderPolicy?: ClientReminderPolicy;
   faq?: Record<string, string>;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
@@ -31,10 +34,12 @@ export interface UpdateBusinessConfigData {
   // Support only: the owner cannot change the trade its agent was set up for.
   businessCategory?: BusinessCategory;
   currency?: Currency;
+  countryCode?: string;
   logoUrl?: string | null;
   whatsappPhone?: string | null;
   bookingPolicy?: BookingPolicy;
   agentPolicy?: AgentPolicy;
+  clientReminderPolicy?: ClientReminderPolicy;
   faq?: Record<string, string>;
   evolutionInstanceId?: string | null;
   evolutionInstanceName?: string | null;
@@ -45,6 +50,9 @@ export interface UpdateBusinessConfigData {
 export interface BusinessConfigRepository {
   create(data: CreateBusinessConfigData): Promise<BusinessConfig>;
   findByTenant(): Promise<BusinessConfig | null>;
+  findCountryCodesByTenantIdsUnscoped(
+    tenantIds: string[],
+  ): Promise<Map<string, string>>;
   findBySlugUnscoped(slug: string): Promise<BusinessConfig | null>;
   findByEvolutionInstanceNameUnscoped(
     instanceName: string,

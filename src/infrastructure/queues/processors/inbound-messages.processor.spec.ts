@@ -2,8 +2,10 @@ import { Job, Queue } from 'bullmq';
 
 import { RecordInboundMessageUseCase } from '@application/agent/use-cases/record-inbound-message.use-case';
 import { ReplyToConversationUseCase } from '@application/agent/use-cases/reply-to-conversation.use-case';
+import { HandleNotificationCommandUseCase } from '@application/appointment-notifications/use-cases/handle-notification-command.use-case';
 import { EnsureHumanAttentionLabelUseCase } from '@application/messaging/use-cases/ensure-human-attention-label.use-case';
 import { SyncConversationLabelUseCase } from '@application/conversations/use-cases/sync-conversation-label.use-case';
+import { CaptureInboundDepositReceiptUseCase } from '@application/deposits/use-cases/capture-inbound-deposit-receipt.use-case';
 import { EvolutionWebhookParser } from '@infrastructure/messaging/evolution-webhook.parser';
 import {
   CONVERSATION_REPLY_JOB,
@@ -32,23 +34,37 @@ describe('InboundMessagesProcessor', () => {
       }),
     };
     const replyToConversation = { execute: jest.fn() };
+    const handleNotificationCommand = {
+      execute: jest.fn().mockResolvedValue(false),
+    };
     const syncConversationLabel = { execute: jest.fn() };
     const ensureHumanAttentionLabel = { execute: jest.fn() };
+    const captureDepositReceipt = {
+      execute: jest.fn().mockResolvedValue('not_expected'),
+    };
     const tenantContext = {
       tenantId: null,
       userId: null,
       runWithTenant: jest.fn((_tenantId, fn) => fn()),
     };
 
-    return new InboundMessagesProcessor(
-      parser as unknown as EvolutionWebhookParser,
-      recordInboundMessage as unknown as RecordInboundMessageUseCase,
-      replyToConversation as unknown as ReplyToConversationUseCase,
-      syncConversationLabel as unknown as SyncConversationLabelUseCase,
-      ensureHumanAttentionLabel as unknown as EnsureHumanAttentionLabelUseCase,
-      tenantContext,
-      queue as Queue,
-    );
+    return {
+      processor: new InboundMessagesProcessor(
+        parser as unknown as EvolutionWebhookParser,
+        recordInboundMessage as unknown as RecordInboundMessageUseCase,
+        replyToConversation as unknown as ReplyToConversationUseCase,
+        handleNotificationCommand as unknown as HandleNotificationCommandUseCase,
+        syncConversationLabel as unknown as SyncConversationLabelUseCase,
+        ensureHumanAttentionLabel as unknown as EnsureHumanAttentionLabelUseCase,
+        captureDepositReceipt as unknown as CaptureInboundDepositReceiptUseCase,
+        tenantContext,
+        queue as Queue,
+      ),
+      recordInboundMessage,
+      handleNotificationCommand,
+      parser,
+      captureDepositReceipt,
+    };
   };
 
   const inboundJob = (providerMessageId: string) =>
@@ -68,7 +84,7 @@ describe('InboundMessagesProcessor', () => {
       add: jest.fn().mockResolvedValue(undefined),
     };
 
-    await buildProcessor(queue).process(inboundJob('wamid.2'));
+    await buildProcessor(queue).processor.process(inboundJob('wamid.2'));
 
     expect(existing.remove).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalledWith(
@@ -95,7 +111,7 @@ describe('InboundMessagesProcessor', () => {
       add: jest.fn().mockResolvedValue(undefined),
     };
 
-    await buildProcessor(queue).process(inboundJob('wamid.3'));
+    await buildProcessor(queue).processor.process(inboundJob('wamid.3'));
 
     expect(finished.remove).toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalledWith(
@@ -117,7 +133,7 @@ describe('InboundMessagesProcessor', () => {
       add: jest.fn().mockResolvedValue(undefined),
     };
 
-    await buildProcessor(queue).process(inboundJob('wamid.4'));
+    await buildProcessor(queue).processor.process(inboundJob('wamid.4'));
 
     expect(active.remove).not.toHaveBeenCalled();
     expect(queue.add).toHaveBeenCalledWith(
@@ -126,6 +142,84 @@ describe('InboundMessagesProcessor', () => {
         providerMessageId: 'wamid.4',
       }),
       expect.objectContaining({ jobId: 't1-reply-cv1-wamid.4' }),
+    );
+  });
+
+  it('handles activation commands before recording a client conversation', async () => {
+    const queue = {
+      getJob: jest.fn().mockResolvedValue(undefined),
+      add: jest.fn().mockResolvedValue(undefined),
+    };
+    const built = buildProcessor(queue);
+    built.parser.parse.mockReturnValue({
+      clientPhoneE164: '+59170000001',
+      kind: 'text',
+      content: 'ACTIVAR AB12CD',
+    });
+    built.handleNotificationCommand.execute.mockResolvedValue(true);
+
+    await built.processor.process(inboundJob('wamid.activate'));
+
+    expect(built.handleNotificationCommand.execute).toHaveBeenCalled();
+    expect(built.recordInboundMessage.execute).not.toHaveBeenCalled();
+    expect(queue.add).not.toHaveBeenCalled();
+  });
+
+  it('handles STOP before the agent when the contact exists', async () => {
+    const queue = {
+      getJob: jest.fn().mockResolvedValue(undefined),
+      add: jest.fn().mockResolvedValue(undefined),
+    };
+    const built = buildProcessor(queue);
+    built.parser.parse.mockReturnValue({
+      clientPhoneE164: '+59170000001',
+      kind: 'text',
+      content: 'STOP',
+    });
+    built.handleNotificationCommand.execute.mockResolvedValue(true);
+
+    await built.processor.process(inboundJob('wamid.stop'));
+
+    expect(built.handleNotificationCommand.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        phoneE164: '+59170000001',
+        command: expect.objectContaining({ kind: 'opt_out' }),
+      }),
+    );
+    expect(built.recordInboundMessage.execute).not.toHaveBeenCalled();
+  });
+
+  it('keeps a pending text turn when a receipt follows in the same burst', async () => {
+    const delayedReply = {
+      getState: jest.fn().mockResolvedValue('delayed'),
+      remove: jest.fn().mockResolvedValue(undefined),
+    };
+    const queue = {
+      getJob: jest.fn().mockResolvedValue(delayedReply),
+      add: jest.fn(),
+    };
+    const built = buildProcessor(queue);
+    built.parser.parse.mockReturnValue({
+      clientPhoneE164: '+59170000001',
+      kind: 'image',
+      content: null,
+      occurredAt: new Date('2026-08-21T12:00:00.000Z'),
+    });
+    built.captureDepositReceipt.execute.mockResolvedValue('attached');
+
+    await built.processor.process(inboundJob('wamid.receipt'));
+
+    expect(built.captureDepositReceipt.execute).toHaveBeenCalledWith(
+      expect.objectContaining({
+        providerMessageId: 'wamid.receipt',
+        deferAmbiguousReply: true,
+      }),
+    );
+    expect(delayedReply.remove).toHaveBeenCalled();
+    expect(queue.add).toHaveBeenCalledWith(
+      'reply',
+      expect.objectContaining({ providerMessageId: 'wamid.receipt' }),
+      expect.any(Object),
     );
   });
 });

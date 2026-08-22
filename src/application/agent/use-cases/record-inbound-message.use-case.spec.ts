@@ -94,12 +94,20 @@ describe('RecordInboundMessageUseCase', () => {
     );
   });
 
-  it('still asks for a reply when the webhook repeats a message nobody answered', async () => {
+  it('ignores a duplicate webhook before it can send a second reply', async () => {
     messages.recordIfNew.mockResolvedValue(null);
 
     await expect(useCase.execute(input)).resolves.toEqual(
-      expect.objectContaining({ needsReply: true }),
+      expect.objectContaining({ needsReply: false }),
     );
+  });
+
+  it('recovers the same queue job after a failed first attempt', async () => {
+    messages.recordIfNew.mockResolvedValue(null);
+
+    await expect(
+      useCase.execute({ ...input, allowRecovery: true }),
+    ).resolves.toEqual(expect.objectContaining({ needsReply: true }));
   });
 
   it('does not queue a second reply for a message already answered', async () => {

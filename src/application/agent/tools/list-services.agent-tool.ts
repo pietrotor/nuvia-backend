@@ -115,6 +115,12 @@ export class ListServicesAgentTool implements AgentTool {
       branchNames: string[];
       keywords: string[];
       description: string | null;
+      bookingQuestions: {
+        id: string;
+        prompt: string;
+        kind: string;
+        isRequired: boolean;
+      }[];
     };
 
     const listed = new Map<string, Listed>();
@@ -145,6 +151,14 @@ export class ListServicesAgentTool implements AgentTool {
           branchNames: [branchName],
           keywords: service.keywords ?? [],
           description: service.description ?? null,
+          bookingQuestions: service
+            .activeBookingQuestions()
+            .map((question) => ({
+              id: question.id,
+              prompt: question.prompt,
+              kind: question.kind,
+              isRequired: question.isRequired,
+            })),
         });
       }
     }

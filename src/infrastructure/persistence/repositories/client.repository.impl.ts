@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { count, eq, ilike, or } from 'drizzle-orm';
+import { count, eq, ilike, inArray, or } from 'drizzle-orm';
 
 import {
   ClientRepository,
@@ -8,7 +8,6 @@ import {
   UpdateClientData,
 } from '@domain/clients/repositories/client.repository';
 import { Client } from '@domain/clients/entities/client.entity';
-import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import { DatabaseErrorTranslator } from '@infrastructure/errors/database-error.translator';
 
@@ -33,8 +32,9 @@ export class DrizzleClientRepository
   async create(data: CreateClientData): Promise<Client> {
     try {
       const [created] = await this.insertInto(clients, {
-        name: data.name,
-        phoneE164: data.phoneE164,
+        name: data.name ?? null,
+        phoneE164: data.phoneE164 ?? null,
+        whatsappProfileName: data.whatsappProfileName ?? null,
         email: data.email,
         birthDate: data.birthDate,
         identificationType: data.identificationType,
@@ -53,21 +53,39 @@ export class DrizzleClientRepository
     return row ? ClientMapper.toDomain(row) : null;
   }
 
-  async findOrCreate(data: CreateClientData): Promise<Client> {
-    const [created] = await this.drizzle.db
-      .insert(clients)
-      .values({ ...data, tenantId: this.tenantId })
-      .onConflictDoNothing({
-        target: [clients.tenantId, clients.phoneE164],
-      })
-      .returning();
-    if (created) return ClientMapper.toDomain(created);
+  async findByIds(ids: string[]): Promise<Client[]> {
+    if (ids.length === 0) return [];
+    const rows = await this.selectFrom(clients, inArray(clients.id, ids));
+    return rows.map(ClientMapper.toDomain);
+  }
 
-    const existing = await this.findByPhone(data.phoneE164);
-    if (!existing) {
-      throw new InternalError(ErrorCode.INTERNAL_ERROR);
+  async findOrCreate(data: CreateClientData): Promise<Client> {
+    if (data.phoneE164) {
+      const existing = await this.findByPhone(data.phoneE164);
+      if (existing) {
+        if (
+          data.whatsappProfileName &&
+          data.whatsappProfileName !== existing.whatsappProfileName
+        ) {
+          return (
+            (await this.update(existing.id, {
+              whatsappProfileName: data.whatsappProfileName,
+            })) ?? existing
+          );
+        }
+        return existing;
+      }
     }
-    return existing;
+
+    try {
+      return await this.create(data);
+    } catch (error) {
+      if (data.phoneE164) {
+        const raced = await this.findByPhone(data.phoneE164);
+        if (raced) return raced;
+      }
+      throw error;
+    }
   }
 
   async findByPhone(phoneE164: string): Promise<Client | null> {
@@ -82,11 +100,27 @@ export class DrizzleClientRepository
   // of a busy centre has no reason to travel so a combobox can filter it in memory.
   async search(criteria: SearchClientsCriteria) {
     const term = criteria.term?.trim();
-    const pattern = term ? `%${escapeLikePattern(term)}%` : undefined;
+    const patterns = new Set<string>();
+    if (term) {
+      patterns.add(`%${escapeLikePattern(term)}%`);
+    }
+    for (const searchTerm of criteria.searchTerms ?? []) {
+      const trimmed = searchTerm.trim();
+      if (!trimmed) continue;
+      patterns.add(`%${escapeLikePattern(trimmed)}%`);
+    }
+
+    const phoneConditions = [...patterns].map((pattern) =>
+      ilike(clients.phoneE164, pattern),
+    );
+    const namePattern = term ? `%${escapeLikePattern(term)}%` : undefined;
     const where = this.scope(
       clients,
-      pattern
-        ? or(ilike(clients.name, pattern), ilike(clients.phoneE164, pattern))
+      patterns.size > 0
+        ? or(
+            namePattern ? ilike(clients.name, namePattern) : undefined,
+            phoneConditions.length > 0 ? or(...phoneConditions) : undefined,
+          )
         : undefined,
     );
 

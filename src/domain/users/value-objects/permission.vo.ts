@@ -14,6 +14,8 @@ export enum Permission {
   PROFESSIONALS_WRITE = 'professionals:write',
   BRANCHES_READ = 'branches:read',
   BRANCHES_WRITE = 'branches:write',
+  APPOINTMENT_NOTIFICATIONS_READ = 'appointment_notifications:read',
+  APPOINTMENT_NOTIFICATIONS_WRITE = 'appointment_notifications:write',
   // clients
   CLIENTS_READ = 'clients:read',
   CLIENTS_WRITE = 'clients:write',
@@ -61,6 +63,7 @@ const STAFF_PERMISSIONS: ReadonlySet<Permission> = new Set([
   Permission.SERVICES_READ,
   Permission.PROFESSIONALS_READ,
   Permission.BRANCHES_READ,
+  Permission.APPOINTMENT_NOTIFICATIONS_READ,
   Permission.CLIENTS_READ,
   Permission.CLIENTS_WRITE,
   Permission.CONVERSATIONS_READ,

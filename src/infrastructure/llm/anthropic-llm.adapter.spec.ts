@@ -1,5 +1,6 @@
 import { ConfigService } from '@nestjs/config';
 
+import { ErrorCode } from '@domain/common/exceptions';
 import { AnthropicLlmAdapter } from './anthropic-llm.adapter';
 
 function buildConfig(values: Record<string, string> = {}): ConfigService {
@@ -247,5 +248,34 @@ describe('AnthropicLlmAdapter', () => {
       cacheWriteTokens: 20,
     });
     expect(result.finishReason).toBe('stop');
+  });
+
+  it('preserves safe provider diagnostics without storing its message', async () => {
+    jest.spyOn(global, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          type: 'error',
+          error: {
+            type: 'rate_limit_error',
+            message: 'sensitive upstream detail',
+          },
+        }),
+        { status: 429, headers: { 'content-type': 'application/json' } },
+      ),
+    );
+
+    await expect(
+      new AnthropicLlmAdapter(buildConfig()).chat({
+        messages: [{ role: 'user', content: 'Hola.' }],
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.LLM_PROVIDER_ERROR,
+      params: {
+        provider: 'anthropic',
+        status: 429,
+        model: 'claude-sonnet-5',
+        error_type: 'rate_limit_error',
+      },
+    });
   });
 });

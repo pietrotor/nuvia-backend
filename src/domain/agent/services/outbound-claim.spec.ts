@@ -49,8 +49,19 @@ describe('outbound claims', () => {
     it.each([
       'Una vez que confirmes la reserva, te envío un QR para que hagas el pago.',
       'Sí, este tratamiento requiere seña.',
+      // Offering to resend is not resending. This one handed a client off to a human for
+      // asking whether she still owed a deposit.
+      'Tenés una sesión pendiente de seña. ¿Querés que te reenvíe el QR para realizar el pago o preferís hacer algún cambio?',
+      '¿Te reenvío el QR?',
+      'Querés que te lo reenvíe?',
     ])('does not flag "%s"', (text) => {
       expect(detectOutboundClaims(text)).not.toContain(
+        OutboundClaim.DEPOSIT_QR,
+      );
+    });
+
+    it('still flags a claim that precedes a question', () => {
+      expect(detectOutboundClaims('Ya te reenvié el QR. ¿Te llegó?')).toContain(
         OutboundClaim.DEPOSIT_QR,
       );
     });
@@ -96,6 +107,17 @@ describe('outbound claims', () => {
       expect(
         unsupportedClaims('Tenemos limpieza facial y peeling.', []),
       ).toEqual([]);
+    });
+
+    it('requires assignment evidence before claiming a receipt correction', () => {
+      const correction =
+        'Listo, el comprobante quedó corregido para el viernes.';
+      expect(unsupportedClaims(correction, [])).toEqual([
+        OutboundClaim.DEPOSIT_RECEIPT_ASSIGNMENT,
+      ]);
+      expect(unsupportedClaims(correction, ['assign_deposit_receipt'])).toEqual(
+        [],
+      );
     });
   });
 });

@@ -29,6 +29,7 @@ import {
   PASSWORD_HASHER_PORT,
   PasswordHasherPort,
 } from '@domain/users/ports/password-hasher.port';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
 import {
   TENANT_CONTEXT_PORT,
   TenantContextPort,
@@ -73,6 +74,7 @@ export class CreateTenantUseCase {
     private readonly tenantContext: TenantContextPort,
     private readonly audit: AuditRecorder,
     private readonly ensureTrialSubscription: EnsureTrialSubscriptionUseCase,
+    private readonly phoneNumbers: PhoneNumberService,
   ) {}
 
   async execute(dto: CreateTenantDto): Promise<CreateTenantResult> {
@@ -106,6 +108,7 @@ export class CreateTenantUseCase {
           agentName: 'Vale',
           tone: AgentTone.WARM,
           businessCategory: dto.businessCategory,
+          countryCode: dto.countryCode ?? 'BO',
           bookingPolicy: {
             minLeadTimeHours: 2,
             cancelRescheduleHours: 24,
@@ -130,7 +133,13 @@ export class CreateTenantUseCase {
           email,
           password: passwordHash,
           role: Role.OWNER,
-          phone: dto.owner.phone ?? null,
+          phone:
+            dto.owner.phone == null
+              ? null
+              : this.phoneNumbers.normalizeToE164(
+                  dto.owner.phone,
+                  dto.countryCode ?? 'BO',
+                ),
         });
       },
     );

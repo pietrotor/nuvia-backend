@@ -1,6 +1,8 @@
 import { Currency } from '@domain/common/value-objects/currency.vo';
 import { Money } from '@domain/common/value-objects/money.vo';
 
+import { ServiceBookingQuestion } from './service-booking-question.entity';
+
 export interface ServiceProps {
   id: string;
   tenantId: string;
@@ -17,6 +19,7 @@ export interface ServiceProps {
   clientChoosesProfessional: boolean;
   isActive: boolean;
   professionalIds: string[];
+  bookingQuestions?: ServiceBookingQuestion[];
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -37,6 +40,7 @@ export class Service {
   public readonly clientChoosesProfessional: boolean;
   public readonly isActive: boolean;
   public readonly professionalIds: string[];
+  public readonly bookingQuestions: ServiceBookingQuestion[];
   public readonly createdAt?: Date;
   public readonly updatedAt?: Date;
 
@@ -59,8 +63,15 @@ export class Service {
     this.clientChoosesProfessional = props.clientChoosesProfessional;
     this.isActive = props.isActive;
     this.professionalIds = props.professionalIds;
+    this.bookingQuestions = props.bookingQuestions ?? [];
     this.createdAt = props.createdAt;
     this.updatedAt = props.updatedAt;
+  }
+
+  activeBookingQuestions(): ServiceBookingQuestion[] {
+    return [...this.bookingQuestions]
+      .filter((question) => question.isActive)
+      .sort((a, b) => a.sortOrder - b.sortOrder);
   }
 
   get currency(): Currency {

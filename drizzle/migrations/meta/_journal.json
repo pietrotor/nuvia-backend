@@ -155,6 +155,76 @@
       "when": 1787100000000,
       "tag": "0021_human_attention_label",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1787200000000,
+      "tag": "0023_violet_rictor",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1787300000000,
+      "tag": "0024_appointment_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1787400000000,
+      "tag": "0025_notification_dispatch_unscoped_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1787500000000,
+      "tag": "0026_client_appointment_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1787600000000,
+      "tag": "0027_business_country_code",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1787700000000,
+      "tag": "0028_deposit-receipt-mvp",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1787800000000,
+      "tag": "0028_deposit-receipt-records",
+      "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1787900000000,
+      "tag": "0029_backfill-deposit-receipts",
+      "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1788000000000,
+      "tag": "0030_remove-appointment-receipt-columns",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1788100000000,
+      "tag": "0031_quoted-message-context",
+      "breakpoints": true
     }
   ]
 }

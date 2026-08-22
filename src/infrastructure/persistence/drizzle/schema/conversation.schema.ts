@@ -13,6 +13,7 @@ import { sql } from 'drizzle-orm';
 
 import { tenants } from './tenant.schema';
 import { clients } from './client.schema';
+import { appointments } from './appointment.schema';
 import { branches } from './branch.schema';
 
 export const messageDirectionEnum = pgEnum('message_direction', [
@@ -83,6 +84,10 @@ export const messages = pgTable(
     inReplyToProviderMessageId: varchar('in_reply_to_provider_message_id', {
       length: 255,
     }),
+    relatedAppointmentId: uuid('related_appointment_id').references(
+      () => appointments.id,
+      { onDelete: 'restrict' },
+    ),
     direction: messageDirectionEnum('direction').notNull(),
     kind: messageKindEnum('kind').notNull(),
     content: text('content'),
@@ -108,10 +113,16 @@ export const messages = pgTable(
     ),
     uniqueIndex('messages_tenant_reply_uq')
       .on(t.tenantId, t.inReplyToProviderMessageId)
-      .where(sql`${t.inReplyToProviderMessageId} is not null`),
+      .where(
+        sql`${t.inReplyToProviderMessageId} is not null and ${t.direction} = 'outbound'`,
+      ),
     index('messages_tenant_agent_reply_idx')
       .on(t.tenantId, t.occurredAt)
       .where(sql`${t.promptFingerprint} is not null`),
+    index('messages_related_appointment_idx').on(
+      t.tenantId,
+      t.relatedAppointmentId,
+    ),
   ],
 );
 

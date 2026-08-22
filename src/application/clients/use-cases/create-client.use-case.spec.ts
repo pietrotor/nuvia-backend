@@ -1,4 +1,6 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { Client } from '@domain/clients/entities/client.entity';
 import { ClientRepository } from '@domain/clients/repositories/client.repository';
@@ -16,21 +18,35 @@ const client = (name: string): Client =>
 
 describe('CreateClientUseCase', () => {
   let clientRepository: jest.Mocked<
-    Pick<ClientRepository, 'findByPhone' | 'findOrCreate'>
+    Pick<ClientRepository, 'findByPhone' | 'create'>
   >;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
+  let phoneNumbers: jest.Mocked<Pick<PhoneNumberService, 'normalizeToE164'>>;
+  let tenantCountry: jest.Mocked<
+    Pick<TenantCountryService, 'getCurrentCountryCode'>
+  >;
   let useCase: CreateClientUseCase;
 
   beforeEach(() => {
     clientRepository = {
       findByPhone: jest.fn().mockResolvedValue(null),
-      findOrCreate: jest.fn().mockResolvedValue(client('María López')),
+      create: jest.fn().mockResolvedValue(client('María López')),
     };
     audit = { record: jest.fn() };
+    phoneNumbers = {
+      normalizeToE164: jest.fn(
+        (value: string | null | undefined) => value ?? null,
+      ),
+    };
+    tenantCountry = {
+      getCurrentCountryCode: jest.fn().mockResolvedValue('BO'),
+    };
 
     useCase = new CreateClientUseCase(
       clientRepository as unknown as ClientRepository,
       audit as unknown as AuditRecorder,
+      phoneNumbers as unknown as PhoneNumberService,
+      tenantCountry as unknown as TenantCountryService,
     );
   });
 
@@ -41,7 +57,7 @@ describe('CreateClientUseCase', () => {
     });
 
     expect(created.name).toBe('María López');
-    expect(clientRepository.findOrCreate).toHaveBeenCalledWith({
+    expect(clientRepository.create).toHaveBeenCalledWith({
       name: 'María López',
       phoneE164: '+59171234567',
       email: null,
@@ -65,7 +81,7 @@ describe('CreateClientUseCase', () => {
       phoneE164: '+59171234567',
     });
 
-    expect(clientRepository.findOrCreate).toHaveBeenCalledWith(
+    expect(clientRepository.create).toHaveBeenCalledWith(
       expect.objectContaining({ name: 'María López' }),
     );
   });
@@ -79,7 +95,7 @@ describe('CreateClientUseCase', () => {
     });
 
     expect(result.name).toBe('María López');
-    expect(clientRepository.findOrCreate).not.toHaveBeenCalled();
+    expect(clientRepository.create).not.toHaveBeenCalled();
     expect(audit.record).not.toHaveBeenCalled();
   });
 });

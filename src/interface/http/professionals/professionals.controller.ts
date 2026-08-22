@@ -1,4 +1,5 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
@@ -8,11 +9,11 @@ import {
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
   Query,
   Res,
   UploadedFile,
   UseInterceptors,
-  Body,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -25,6 +26,14 @@ import {
 } from '@nestjs/swagger';
 import type { Response } from 'express';
 
+import { UpsertProfessionalNotificationDto } from '@application/appointment-notifications/dto/upsert-professional-notification.dto';
+import { NotificationSettingsView } from '@application/appointment-notifications/dto/notification-subscription-view';
+import { NotificationSubscriptionView } from '@application/appointment-notifications/dto/notification-subscription-view';
+import { DisableProfessionalNotificationUseCase } from '@application/appointment-notifications/use-cases/disable-professional-notification.use-case';
+import { ListProfessionalNotificationsUseCase } from '@application/appointment-notifications/use-cases/list-professional-notifications.use-case';
+import { UpsertProfessionalNotificationUseCase } from '@application/appointment-notifications/use-cases/upsert-professional-notification.use-case';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { ListEntityAppointmentsQueryDto } from '@application/appointments/dto/list-entity-appointments-query.dto';
 import { ListProfessionalAppointmentsUseCase } from '@application/appointments/use-cases/list-professional-appointments.use-case';
 import { CreateProfessionalDto } from '@application/professionals/dto/create-professional.dto';
@@ -44,6 +53,10 @@ import {
 import { Permission } from '@domain/users/value-objects/permission.vo';
 import { Auth } from '@interface/http/common/decorators/auth.decorator';
 import { AppointmentViewResponseDto } from '@interface/http/appointments/dto/appointment-view-response.dto';
+import {
+  NotificationSettingsResponseDto,
+  NotificationSubscriptionResponseDto,
+} from '@interface/http/appointment-notifications/dto/notification-subscription-response.dto';
 import { ProfessionalResponseDto } from './dto/professional-response.dto';
 
 @ApiTags('Professionals')
@@ -59,7 +72,35 @@ export class ProfessionalsController {
     private readonly uploadProfessionalAvatar: UploadProfessionalAvatarUseCase,
     private readonly getProfessionalAvatar: GetProfessionalAvatarUseCase,
     private readonly deleteProfessionalAvatar: DeleteProfessionalAvatarUseCase,
+    private readonly listProfessionalNotifications: ListProfessionalNotificationsUseCase,
+    private readonly upsertProfessionalNotification: UpsertProfessionalNotificationUseCase,
+    private readonly disableProfessionalNotification: DisableProfessionalNotificationUseCase,
+    private readonly phoneNumbers: PhoneNumberService,
+    private readonly tenantCountry: TenantCountryService,
   ) {}
+
+  private async toNotificationSettings(
+    view: NotificationSettingsView,
+  ): Promise<NotificationSettingsResponseDto> {
+    const countryCode = await this.tenantCountry.getCurrentCountryCode();
+    return NotificationSettingsResponseDto.from(view, {
+      countryCode,
+      formatMasked: (phone) =>
+        this.phoneNumbers.formatMaskedForDisplay(phone, countryCode),
+    });
+  }
+
+  private async toNotificationSubscription(
+    view: NotificationSubscriptionView,
+  ): Promise<NotificationSubscriptionResponseDto> {
+    const countryCode = await this.tenantCountry.getCurrentCountryCode();
+    return NotificationSubscriptionResponseDto.from(view, {
+      maskedPhone: this.phoneNumbers.formatMaskedForDisplay(
+        view.contact.phoneE164,
+        countryCode,
+      ),
+    });
+  }
 
   @Get()
   @Auth(Permission.PROFESSIONALS_READ)
@@ -185,5 +226,47 @@ export class ProfessionalsController {
     return ProfessionalResponseDto.from(
       await this.deleteProfessionalAvatar.execute(id),
     );
+  }
+
+  @Get(':id/notifications')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_READ)
+  @ApiOperation({
+    summary: 'Lists appointment notification settings for a professional',
+  })
+  @ApiResponse({ status: 200, type: NotificationSettingsResponseDto })
+  async listNotifications(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<NotificationSettingsResponseDto> {
+    return this.toNotificationSettings(
+      await this.listProfessionalNotifications.execute(id),
+    );
+  }
+
+  @Put(':id/notifications')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)
+  @ApiOperation({
+    summary: 'Links or replaces the WhatsApp contact for a professional',
+  })
+  @ApiResponse({ status: 200, type: NotificationSubscriptionResponseDto })
+  async upsertNotifications(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: UpsertProfessionalNotificationDto,
+  ): Promise<NotificationSubscriptionResponseDto> {
+    return this.toNotificationSubscription(
+      await this.upsertProfessionalNotification.execute(id, dto),
+    );
+  }
+
+  @Delete(':id/notifications')
+  @Auth(Permission.APPOINTMENT_NOTIFICATIONS_WRITE)
+  @HttpCode(HttpStatus.NO_CONTENT)
+  @ApiOperation({
+    summary: 'Disables appointment notifications for a professional',
+  })
+  @ApiResponse({ status: 204 })
+  async disableNotifications(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<void> {
+    await this.disableProfessionalNotification.execute(id);
   }
 }

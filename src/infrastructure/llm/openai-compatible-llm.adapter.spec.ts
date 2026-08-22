@@ -280,6 +280,7 @@ describe('OpenAiCompatibleLlmAdapter', () => {
       expect.objectContaining({
         code: ErrorCode.LLM_PROVIDER_ERROR,
         params: expect.objectContaining({
+          provider: 'openai-compatible',
           status: 429,
           model: 'test-model',
           error_type: 'rate_limit_exceeded',

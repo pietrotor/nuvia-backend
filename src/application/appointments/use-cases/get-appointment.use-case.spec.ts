@@ -18,6 +18,7 @@ const view: AppointmentView = {
     tenantId: 't1',
     branchId: 'b1',
     clientId: 'c1',
+    bookingContactClientId: 'c1',
     professionalId: 'p1',
     serviceId: 's1',
     startsAt: new Date('2026-08-10T14:00:00.000Z'),
@@ -26,6 +27,7 @@ const view: AppointmentView = {
     price: Money.of('150.00', Currency.BOB),
   }),
   client: { id: 'c1', name: 'María López', phoneE164: '+59171234567' },
+  bookingContact: { id: 'c1', name: 'María López', phoneE164: '+59171234567' },
   professional: { id: 'p1', name: 'Camila' },
   service: {
     id: 's1',

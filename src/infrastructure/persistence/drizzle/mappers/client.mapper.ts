@@ -8,6 +8,7 @@ export class ClientMapper {
       tenantId: row.tenantId,
       name: row.name,
       phoneE164: row.phoneE164,
+      whatsappProfileName: row.whatsappProfileName,
       email: row.email,
       birthDate: row.birthDate,
       identificationType: row.identificationType,

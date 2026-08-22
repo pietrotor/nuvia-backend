@@ -1,5 +1,5 @@
 import { Injectable } from '@nestjs/common';
-import { eq } from 'drizzle-orm';
+import { eq, inArray } from 'drizzle-orm';
 
 import {
   BusinessConfigRepository,
@@ -11,7 +11,9 @@ import {
   BusinessConfig,
   DEFAULT_AGENT_POLICY,
 } from '@domain/business-config/entities/business-config.entity';
+import { DEFAULT_CLIENT_REMINDER_POLICY } from '@domain/business-config/value-objects/client-reminder-policy.vo';
 import { DEFAULT_BUSINESS_CATEGORY } from '@domain/business-config/value-objects/business-category.vo';
+import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
 import { Currency } from '@domain/common/value-objects/currency.vo';
 import { TenantContextService } from '@infrastructure/tenancy/tenant-context.service';
 import { DatabaseErrorTranslator } from '@infrastructure/errors/database-error.translator';
@@ -38,10 +40,13 @@ export class DrizzleBusinessConfigRepository
         tone: data.tone ?? AgentTone.WARM,
         businessCategory: data.businessCategory ?? DEFAULT_BUSINESS_CATEGORY,
         currency: data.currency ?? Currency.BOB,
+        countryCode: data.countryCode ?? DEFAULT_COUNTRY_CODE,
         logoUrl: data.logoUrl,
         whatsappPhone: data.whatsappPhone,
         bookingPolicy: data.bookingPolicy,
         agentPolicy: data.agentPolicy ?? DEFAULT_AGENT_POLICY,
+        clientReminderPolicy:
+          data.clientReminderPolicy ?? DEFAULT_CLIENT_REMINDER_POLICY,
         faq: data.faq ?? {},
         evolutionInstanceId: data.evolutionInstanceId,
         evolutionInstanceName: data.evolutionInstanceName,
@@ -57,6 +62,27 @@ export class DrizzleBusinessConfigRepository
   async findByTenant(): Promise<BusinessConfig | null> {
     const [row] = await this.selectFrom(businessConfigs);
     return row ? BusinessConfigMapper.toDomain(row) : null;
+  }
+
+  async findCountryCodesByTenantIdsUnscoped(
+    tenantIds: string[],
+  ): Promise<Map<string, string>> {
+    if (tenantIds.length === 0) return new Map();
+
+    const rows = await this.drizzle.db
+      .select({
+        tenantId: businessConfigs.tenantId,
+        countryCode: businessConfigs.countryCode,
+      })
+      .from(businessConfigs)
+      .where(inArray(businessConfigs.tenantId, tenantIds));
+
+    return new Map(
+      rows.map((row) => [
+        row.tenantId,
+        row.countryCode ?? DEFAULT_COUNTRY_CODE,
+      ]),
+    );
   }
 
   async findBySlugUnscoped(slug: string): Promise<BusinessConfig | null> {

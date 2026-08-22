@@ -71,12 +71,18 @@ type OpenAiChatPayload = {
 export class OpenAiCompatibleLlmAdapter implements LlmPort {
   constructor(protected readonly config: ConfigService) {}
 
+  protected get providerName(): string {
+    return 'openai-compatible';
+  }
+
   async chat(input: LlmChatInput): Promise<LlmChatResult> {
     const baseUrl = this.config.get<string>('LLM_BASE_URL');
     const apiKey = this.config.get<string>('LLM_API_KEY');
     const model = this.config.get<string>('LLM_MODEL');
     if (!baseUrl || !apiKey || !model) {
-      throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED);
+      throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED, {
+        provider: this.providerName,
+      });
     }
     const maxTokens = this.maxTokens();
     const temperature = resolveTemperature(this.config);
@@ -113,13 +119,14 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
         },
       );
 
-      const payload = await this.readPayload(response);
+      const payload = await this.readPayload(response, model);
       this.assertSuccess(response, payload, model);
 
       const choice = payload.choices?.[0];
       const message = choice?.message;
       if (!message) {
         throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+          provider: this.providerName,
           status: response.status,
           model,
         });
@@ -142,7 +149,11 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
       };
     } catch (error) {
       if (error instanceof InternalError) throw error;
-      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR);
+      throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: this.providerName,
+        model,
+        cause: this.failureCause(error),
+      });
     }
   }
 
@@ -196,18 +207,25 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
     const value = Number(raw);
     if (!Number.isFinite(value) || value <= 0) {
       throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED, {
+        provider: this.providerName,
         field: 'LLM_MAX_TOKENS',
       });
     }
     return value;
   }
 
-  private async readPayload(response: Response): Promise<OpenAiChatPayload> {
+  private async readPayload(
+    response: Response,
+    model: string,
+  ): Promise<OpenAiChatPayload> {
     try {
       return (await response.json()) as OpenAiChatPayload;
     } catch {
       throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+        provider: this.providerName,
         status: response.status,
+        model,
+        cause: 'parse',
       });
     }
   }
@@ -227,10 +245,17 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
 
     const errorType = embeddedError?.metadata?.error_type;
     throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
+      provider: this.providerName,
       status: response.status,
       model,
       ...(errorType ? { error_type: errorType } : {}),
     });
+  }
+
+  private failureCause(error: unknown): 'timeout' | 'network' {
+    return error instanceof Error && error.name === 'TimeoutError'
+      ? 'timeout'
+      : 'network';
   }
 
   private normalizeContent(

@@ -16,6 +16,7 @@ import {
   LlmToolChoice,
   LlmUsage,
 } from '@domain/agent/ports/llm.port';
+import { DomainException, ErrorCode } from '@domain/common/exceptions';
 
 const DEFAULT_MAX_STEP_CHARS = 8_000;
 
@@ -192,12 +193,50 @@ export class AgentTraceDraft {
     this.outcome = 'failed';
     this.errorCount += 1;
     this.finalText = message;
+    this.recordLlmError(input.error);
     this.steps.push({
       type: 'outcome',
       text: message,
       reason: 'failed',
     });
     return this.toEntity(input.endedAt);
+  }
+
+  private recordLlmError(error: unknown): void {
+    if (
+      !(error instanceof DomainException) ||
+      (error.code !== ErrorCode.LLM_PROVIDER_ERROR &&
+        error.code !== ErrorCode.LLM_NOT_CONFIGURED)
+    ) {
+      return;
+    }
+
+    const request = [...this.steps]
+      .reverse()
+      .find((step) => step.type === 'llm_request');
+    if (!request || request.type !== 'llm_request') return;
+
+    this.steps.push({
+      type: 'llm_error',
+      round: request.round,
+      phase: request.phase,
+      code: error.code,
+      provider: this.stringParam(error, 'provider'),
+      status: this.numberParam(error, 'status'),
+      model: this.stringParam(error, 'model'),
+      errorType: this.stringParam(error, 'error_type'),
+      cause: this.stringParam(error, 'cause'),
+    });
+  }
+
+  private stringParam(error: DomainException, key: string): string | undefined {
+    const value = error.params[key];
+    return typeof value === 'string' ? value : undefined;
+  }
+
+  private numberParam(error: DomainException, key: string): number | undefined {
+    const value = error.params[key];
+    return typeof value === 'number' ? value : undefined;
   }
 
   static skipped(input: {

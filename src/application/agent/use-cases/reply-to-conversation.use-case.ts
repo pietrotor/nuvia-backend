@@ -27,6 +27,7 @@ import { shouldAutoResumeHandoff } from '@domain/conversations/services/should-a
 import {
   MESSAGING_PORT,
   MessagingPort,
+  OutboundClass,
 } from '@domain/messaging/ports/messaging.port';
 import {
   circadianSlowdown,
@@ -201,7 +202,10 @@ export class ReplyToConversationUseCase {
         this.shouldShortCircuitGreeting(trigger.content, history)
       ) {
         answer = await this.greetingAnswer(input, trigger.content, agentName);
-      } else if (trigger.kind === MessageKind.TEXT && trigger.content) {
+      } else if (
+        (trigger.kind === MessageKind.TEXT && trigger.content) ||
+        this.imageHasTextContext(trigger, history)
+      ) {
         answer = await this.orchestrator.respond(
           history,
           {
@@ -407,6 +411,7 @@ export class ReplyToConversationUseCase {
         elapsedMs: this.clock.now().getTime() - params.waitingSince.getTime(),
         slowdown: params.slowdown,
       }),
+      outboundClass: OutboundClass.AGENT_REPLY,
     });
     await this.messages.recordIfNew({
       conversationId: params.conversationId,
@@ -456,6 +461,27 @@ export class ReplyToConversationUseCase {
     return history
       .filter((message) => message.direction === MessageDirection.INBOUND)
       .at(-1);
+  }
+
+  private imageHasTextContext(trigger: Message, history: Message[]): boolean {
+    if (trigger.kind !== MessageKind.IMAGE) return false;
+    if (trigger.content?.trim()) return true;
+
+    const triggerIndex = history.findIndex(
+      (message) => message.id === trigger.id,
+    );
+    for (let index = triggerIndex - 1; index >= 0; index -= 1) {
+      const message = history[index];
+      if (message.direction === MessageDirection.OUTBOUND) return false;
+      if (
+        message.direction === MessageDirection.INBOUND &&
+        message.kind === MessageKind.TEXT &&
+        message.content?.trim()
+      ) {
+        return true;
+      }
+    }
+    return false;
   }
 
   // A failed follow-up must not fail the job: the reply already went out and is

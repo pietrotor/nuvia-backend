@@ -4,13 +4,9 @@ import {
   IsEmail,
   IsOptional,
   IsString,
-  Matches,
   MaxLength,
   MinLength,
 } from 'class-validator';
-
-// E.164: a leading plus, a country code that cannot start with zero, up to 15 digits.
-const E164_PATTERN = /^\+[1-9]\d{7,14}$/;
 
 export class CreateClientDto {
   @ApiProperty({ example: 'María López' })
@@ -19,11 +15,11 @@ export class CreateClientDto {
   @MaxLength(255)
   name: string;
 
-  @ApiProperty({ example: '+59171234567' })
-  @Matches(E164_PATTERN, {
-    message: 'phoneE164 must be a valid E.164 phone number',
-  })
-  phoneE164: string;
+  @ApiPropertyOptional({ example: '71234567', nullable: true })
+  @IsOptional()
+  @IsString()
+  @MaxLength(20)
+  phoneE164?: string | null;
 
   @ApiPropertyOptional({ example: 'maria@example.com', nullable: true })
   @IsOptional()

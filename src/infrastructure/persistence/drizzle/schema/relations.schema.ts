@@ -229,6 +229,12 @@ export const appointmentRelations = relations(appointments, ({ one }) => ({
   client: one(clients, {
     fields: [appointments.clientId],
     references: [clients.id],
+    relationName: 'appointmentAttendee',
+  }),
+  bookingContact: one(clients, {
+    fields: [appointments.bookingContactClientId],
+    references: [clients.id],
+    relationName: 'appointmentBookingContact',
   }),
   professional: one(professionals, {
     fields: [appointments.professionalId],

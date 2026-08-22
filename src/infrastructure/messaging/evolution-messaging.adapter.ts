@@ -6,6 +6,11 @@ import {
   InternalError,
 } from '@domain/common/exceptions';
 import { LOGGER_PORT, LoggerPort } from '@domain/common/ports/logger.port';
+import { InvalidDepositReceiptFileError } from '@domain/deposits/exceptions/deposit-qr.exceptions';
+import {
+  DEPOSIT_QR_MAX_SIZE_BYTES,
+  DEPOSIT_QR_MAX_SIZE_MB,
+} from '@domain/deposits/services/deposit-qr-image-validator';
 import {
   BUSINESS_CONFIG_REPOSITORY,
   BusinessConfigRepository,
@@ -13,6 +18,8 @@ import {
 import {
   MarkAsReadInput,
   MessagingPort,
+  DownloadInboundMediaInput,
+  InboundMedia,
   SendMediaMessageInput,
   SentMessage,
   SendTextMessageInput,
@@ -25,6 +32,11 @@ import {
 
 interface EvolutionSendResponse {
   key: { id: string };
+}
+
+interface EvolutionMediaResponse {
+  mimetype: string;
+  base64: string;
 }
 
 @Injectable()
@@ -122,6 +134,35 @@ export class EvolutionMessagingAdapter implements MessagingPort {
     );
   }
 
+  async downloadInboundMedia(
+    input: DownloadInboundMediaInput,
+  ): Promise<InboundMedia> {
+    const instanceName = await this.resolveInstanceName(input.tenantId);
+    const response = await this.client.post<EvolutionMediaResponse>(
+      `/chat/getBase64FromMediaMessage/${encodeURIComponent(instanceName)}`,
+      {
+        message: { key: { id: input.providerMessageId } },
+        convertToMp4: false,
+      },
+    );
+    const mimeType = response.mimetype?.split(';')[0]?.trim().toLowerCase();
+    if (!response.base64 || !mimeType) {
+      throw new InternalError(ErrorCode.EVOLUTION_API_ERROR, {
+        operation: 'download_inbound_media',
+        providerMessageId: input.providerMessageId,
+      });
+    }
+    const maximumBase64Length =
+      4 * Math.ceil(DEPOSIT_QR_MAX_SIZE_BYTES / 3) + 4;
+    if (response.base64.length > maximumBase64Length) {
+      throw new InvalidDepositReceiptFileError(DEPOSIT_QR_MAX_SIZE_MB);
+    }
+    return {
+      bytes: Buffer.from(response.base64, 'base64'),
+      mimeType,
+    };
+  }
+
   private async resolveInstanceName(tenantId: string): Promise<string> {
     const config = await this.businessConfigRepository.findByTenant();
     if (
@@ -134,13 +175,23 @@ export class EvolutionMessagingAdapter implements MessagingPort {
     return config.evolutionInstanceName;
   }
 
-  // Only a rejected request is safe to repeat: a timeout may still have been
-  // delivered, and retrying that would send the message twice.
+  // Only a rejected presence/LID request is safe to repeat: a timeout may still
+  // have been delivered, and retrying that would send the message twice.
   private isRejected(error: unknown): boolean {
+    if (
+      !(error instanceof DomainException) ||
+      error.code !== ErrorCode.EVOLUTION_API_ERROR ||
+      error.params.status !== 400
+    ) {
+      return false;
+    }
+    const body = String(error.params.body ?? '').toLowerCase();
+    // "invalid" contains the letters "lid"; match a LID token, not a substring.
     return (
-      error instanceof DomainException &&
-      error.code === ErrorCode.EVOLUTION_API_ERROR &&
-      error.params.status === 400
+      /@lid\b/.test(body) ||
+      /\blid\b/.test(body) ||
+      body.includes('presence') ||
+      body.includes('composing')
     );
   }
 

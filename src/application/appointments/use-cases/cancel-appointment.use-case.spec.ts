@@ -61,6 +61,7 @@ describe('CancelAppointmentUseCase', () => {
   >;
   let serviceRepository: jest.Mocked<Pick<ServiceRepository, 'findById'>>;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
+  let notifications: { recordCancelled: jest.Mock };
   let useCase: CancelAppointmentUseCase;
 
   beforeEach(() => {
@@ -74,6 +75,7 @@ describe('CancelAppointmentUseCase', () => {
       findById: jest.fn().mockResolvedValue(service(false)),
     };
     audit = { record: jest.fn() };
+    notifications = { recordCancelled: jest.fn().mockResolvedValue(undefined) };
 
     const businessConfigRepository: jest.Mocked<
       Pick<BusinessConfigRepository, 'findByTenant'>
@@ -106,6 +108,9 @@ describe('CancelAppointmentUseCase', () => {
       clock,
       audit as unknown as AuditRecorder,
       { changed: jest.fn() } as unknown as AgendaEventPublisher,
+      notifications as never,
+      { cancelOpen: jest.fn().mockResolvedValue(undefined) } as never,
+      { run: (fn: () => Promise<unknown>) => fn() } as never,
     );
   });
 
@@ -119,6 +124,7 @@ describe('CancelAppointmentUseCase', () => {
         status: AppointmentStatus.CANCELLED,
       }),
     );
+    expect(notifications.recordCancelled).toHaveBeenCalled();
   });
 
   it('flags the deposit as at risk when cancelling outside the window', async () => {
@@ -145,6 +151,7 @@ describe('CancelAppointmentUseCase', () => {
       useCase.execute('a1', {}, 'otra-clienta'),
     ).rejects.toBeInstanceOf(AppointmentNotFoundError);
     expect(appointmentRepository.save).not.toHaveBeenCalled();
+    expect(notifications.recordCancelled).not.toHaveBeenCalled();
   });
 
   it('does not cancel an appointment that was already attended', async () => {

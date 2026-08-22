@@ -1,7 +1,11 @@
 import { Type } from 'class-transformer';
 import {
+  ArrayMaxSize,
+  ArrayUnique,
+  IsArray,
   IsBoolean,
   IsEnum,
+  IsIn,
   IsInt,
   IsObject,
   IsOptional,
@@ -21,6 +25,12 @@ import {
   EmojiPolicy,
 } from '@domain/business-config/entities/business-config.entity';
 import { Currency } from '@domain/common/value-objects/currency.vo';
+import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
+import {
+  CLIENT_REMINDER_OFFSET_CATALOG,
+  ClientReminderOffset,
+  MAX_CLIENT_REMINDER_OFFSETS,
+} from '@domain/business-config/value-objects/client-reminder-policy.vo';
 
 export class BookingPolicyDto {
   @ApiProperty({ example: 2 })
@@ -97,6 +107,28 @@ export class AgentPolicyDto {
   humanAttentionLabelName?: string;
 }
 
+export class ClientReminderPolicyDto {
+  @ApiProperty({ example: true })
+  @IsBoolean()
+  enabled: boolean;
+
+  @ApiProperty({
+    enum: CLIENT_REMINDER_OFFSET_CATALOG,
+    isArray: true,
+    example: ['24h', '2h'],
+    description: 'Closed catalog; at most three unique offsets',
+  })
+  @IsArray()
+  @ArrayUnique()
+  @ArrayMaxSize(MAX_CLIENT_REMINDER_OFFSETS)
+  @IsIn([...CLIENT_REMINDER_OFFSET_CATALOG], { each: true })
+  offsets: ClientReminderOffset[];
+
+  @ApiProperty({ example: false })
+  @IsBoolean()
+  thankYouAfterVisit: boolean;
+}
+
 export class UpdateBusinessConfigDto {
   @ApiProperty({ example: 'estetica-glow', required: false })
   @IsOptional()
@@ -126,6 +158,17 @@ export class UpdateBusinessConfigDto {
   @IsEnum(Currency)
   currency?: Currency;
 
+  @ApiProperty({
+    example: DEFAULT_COUNTRY_CODE,
+    required: false,
+    description:
+      'ISO 3166-1 alpha-2 country for default phone parsing and display',
+  })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  countryCode?: string;
+
   @ApiProperty({ required: false, nullable: true })
   @IsOptional()
   @IsUrl({ require_tld: false })
@@ -133,7 +176,8 @@ export class UpdateBusinessConfigDto {
 
   @ApiProperty({ example: '+59170000000', required: false, nullable: true })
   @IsOptional()
-  @Matches(/^\+[1-9]\d{7,14}$/)
+  @IsString()
+  @MaxLength(20)
   whatsappPhone?: string | null;
 
   @ApiProperty({ type: BookingPolicyDto, required: false })
@@ -147,6 +191,12 @@ export class UpdateBusinessConfigDto {
   @ValidateNested()
   @Type(() => AgentPolicyDto)
   agentPolicy?: AgentPolicyDto;
+
+  @ApiProperty({ type: ClientReminderPolicyDto, required: false })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => ClientReminderPolicyDto)
+  clientReminderPolicy?: ClientReminderPolicyDto;
 
   @ApiProperty({ required: false, example: { pagos: 'Aceptamos QR.' } })
   @IsOptional()

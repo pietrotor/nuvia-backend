@@ -25,6 +25,7 @@ describe('EvolutionWebhookParser', () => {
       clientName: 'Ana',
       kind: MessageKind.TEXT,
       content: 'Quiero reservar',
+      inReplyToProviderMessageId: null,
       occurredAt: new Date(1_785_688_800_000),
     });
   });
@@ -67,5 +68,76 @@ describe('EvolutionWebhookParser', () => {
 
     expect(result?.clientPhoneE164).toBe('+59171111111');
     expect(result?.content).toBe('Hola');
+  });
+
+  it.each([
+    {
+      messageType: 'extendedTextMessage',
+      message: {
+        extendedTextMessage: {
+          text: 'Era para el viernes',
+          contextInfo: {
+            stanzaId: 'quoted-receipt',
+            quotedMessage: { imageMessage: { caption: '' } },
+          },
+        },
+      },
+      kind: MessageKind.TEXT,
+    },
+    {
+      messageType: 'imageMessage',
+      message: {
+        imageMessage: {
+          mimetype: 'image/jpeg',
+          caption: 'Este es para el viernes',
+          contextInfo: {
+            stanzaId: 'quoted-qr',
+            quotedMessage: { imageMessage: { caption: 'QR de seña' } },
+          },
+        },
+      },
+      kind: MessageKind.IMAGE,
+    },
+  ])(
+    'extracts the quoted stanza from $messageType payloads',
+    ({ messageType, message, kind }) => {
+      const result = parser.parse({
+        data: {
+          key: {
+            id: `incoming-${messageType}`,
+            remoteJid: '59170000000@s.whatsapp.net',
+            fromMe: false,
+          },
+          message,
+          messageType,
+        },
+      });
+
+      expect(result).toEqual(
+        expect.objectContaining({
+          kind,
+          content:
+            messageType === 'imageMessage'
+              ? 'Este es para el viernes'
+              : 'Era para el viernes',
+          inReplyToProviderMessageId:
+            messageType === 'imageMessage' ? 'quoted-qr' : 'quoted-receipt',
+        }),
+      );
+    },
+  );
+
+  it('parses a MESSAGES_UPDATE delivery ack', () => {
+    expect(
+      parser.parseStatusUpdates({
+        data: [{ key: { id: 'wamid.out' }, status: 'DELIVERY_ACK' }],
+      }),
+    ).toEqual([
+      {
+        providerMessageId: 'wamid.out',
+        status: 'DELIVERY_ACK',
+        statusCode: null,
+      },
+    ]);
   });
 });

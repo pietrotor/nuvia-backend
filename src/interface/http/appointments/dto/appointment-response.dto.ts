@@ -11,6 +11,9 @@ export class AppointmentResponseDto {
   clientId: string;
 
   @ApiProperty()
+  bookingContactClientId: string;
+
+  @ApiProperty()
   professionalId: string;
 
   @ApiProperty()
@@ -29,6 +32,7 @@ export class AppointmentResponseDto {
     return {
       id: appointment.id,
       clientId: appointment.clientId,
+      bookingContactClientId: appointment.bookingContactClientId,
       professionalId: appointment.professionalId,
       serviceId: appointment.serviceId,
       startsAt: appointment.startsAt.toISOString(),

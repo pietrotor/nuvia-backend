@@ -75,6 +75,20 @@ Al verificar seña o cancelar/liberar una cita, cancelá reminders y deadlines y
 
 Constraint en la base. Un `SELECT` antes del `INSERT` no es idempotencia.
 
+## 11. Identidad de la reserva
+
+`Appointment.clientId` es quien recibe el servicio. `Appointment.bookingContactClientId` es
+quien la gestionó. Pueden ser el mismo id. Historial y paquetes se leen por `clientId`.
+Cancelar/reagendar/listar desde el canal de la conversación se autoriza si el contacto
+es la persona atendida **o** el contacto de reserva.
+
+No se confirma una cita si la persona atendida no tiene un `name` confirmado. El
+`whatsappProfileName` (pushName, iniciales, "Cliente 1234") no cuenta.
+
+Las preguntas activas y obligatorias del servicio se validan en `BookAppointmentUseCase`.
+Las respuestas se guardan con snapshot del texto: editar el servicio no reescribe citas viejas.
+Las preguntas no se borran: se desactivan.
+
 ## 8. Handoff y pausa del bot
 
 Pedido de humano, 2 fallos de entendimiento, o tema fuera de alcance → marcar conversación,

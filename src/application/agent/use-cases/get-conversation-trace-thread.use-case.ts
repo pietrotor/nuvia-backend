@@ -27,6 +27,7 @@ const THREAD_MESSAGE_LIMIT = 200;
 
 export interface ConversationTraceThread {
   messages: Message[];
+  quotedMessagesByProviderId: Map<string, Message>;
   traces: AgentTraceSummary[];
 }
 
@@ -63,6 +64,26 @@ export class GetConversationTraceThreadUseCase {
         }),
         this.traces.listByConversation(input.conversationId),
       ]);
+      const loadedByProviderId = new Map(
+        messages.map((message) => [message.providerMessageId, message]),
+      );
+      const missingQuotedIds = [
+        ...new Set(
+          messages
+            .map((message) => message.inReplyToProviderMessageId)
+            .filter(
+              (id): id is string => id !== null && !loadedByProviderId.has(id),
+            ),
+        ),
+      ];
+      const quotedOutsideWindow =
+        await this.messages.findByProviderMessageIds(missingQuotedIds);
+      const quotedMessagesByProviderId = new Map([
+        ...loadedByProviderId,
+        ...quotedOutsideWindow.map(
+          (message) => [message.providerMessageId, message] as const,
+        ),
+      ]);
 
       await this.audit.record({
         action: AuditAction.AGENT_TRACE_VIEWED,
@@ -72,7 +93,7 @@ export class GetConversationTraceThreadUseCase {
         after: { kind: 'thread', traceCount: traces.length },
       });
 
-      return { messages, traces };
+      return { messages, quotedMessagesByProviderId, traces };
     });
   }
 }

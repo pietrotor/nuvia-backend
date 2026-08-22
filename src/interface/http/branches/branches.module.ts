@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 
+import { AppointmentNotificationsModule } from '@application/appointment-notifications/appointment-notifications.module';
 import { AssignProfessionalToBranchUseCase } from '@application/branches/use-cases/assign-professional-to-branch.use-case';
 import { CreateBranchUseCase } from '@application/branches/use-cases/create-branch.use-case';
 import { GetBranchUseCase } from '@application/branches/use-cases/get-branch.use-case';
@@ -18,6 +19,7 @@ import { DepositQrAssignmentValidator } from '@application/services/services/dep
 import { BranchesController } from './branches.controller';
 
 @Module({
+  imports: [AppointmentNotificationsModule],
   controllers: [BranchesController],
   providers: [
     CreateBranchUseCase,

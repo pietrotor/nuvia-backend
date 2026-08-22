@@ -1,8 +1,43 @@
 import { ApiProperty } from '@nestjs/swagger';
 
 import { Service } from '@domain/services/entities/service.entity';
+import { ServiceBookingQuestion } from '@domain/services/entities/service-booking-question.entity';
+import { BookingQuestionKind } from '@domain/services/value-objects/booking-question-kind.vo';
 
 import { MoneyResponseDto } from '@interface/http/common/dto/money-response.dto';
+
+export class ServiceBookingQuestionResponseDto {
+  @ApiProperty()
+  id: string;
+
+  @ApiProperty()
+  prompt: string;
+
+  @ApiProperty({ enum: BookingQuestionKind })
+  kind: BookingQuestionKind;
+
+  @ApiProperty()
+  isRequired: boolean;
+
+  @ApiProperty()
+  sortOrder: number;
+
+  @ApiProperty()
+  isActive: boolean;
+
+  static from(
+    question: ServiceBookingQuestion,
+  ): ServiceBookingQuestionResponseDto {
+    return {
+      id: question.id,
+      prompt: question.prompt,
+      kind: question.kind,
+      isRequired: question.isRequired,
+      sortOrder: question.sortOrder,
+      isActive: question.isActive,
+    };
+  }
+}
 
 export class ServiceResponseDto {
   @ApiProperty()
@@ -41,6 +76,9 @@ export class ServiceResponseDto {
   @ApiProperty({ type: [String] })
   professionalIds: string[];
 
+  @ApiProperty({ type: [ServiceBookingQuestionResponseDto] })
+  bookingQuestions: ServiceBookingQuestionResponseDto[];
+
   @ApiProperty()
   clientChoosesProfessional: boolean;
 
@@ -62,6 +100,9 @@ export class ServiceResponseDto {
       depositPercent: service.depositPercent,
       depositQrId: service.depositQrId,
       professionalIds: service.professionalIds,
+      bookingQuestions: service.bookingQuestions.map(
+        ServiceBookingQuestionResponseDto.from,
+      ),
       clientChoosesProfessional: service.clientChoosesProfessional,
       isActive: service.isActive,
     };

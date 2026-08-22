@@ -5,12 +5,14 @@ import {
   APPOINTMENT_VIEW_REPOSITORY,
   AppointmentView,
   AppointmentViewRepository,
+  ClientAppointmentScope,
 } from '@domain/appointments/repositories/appointment-view.repository';
 import { CLOCK_PORT, ClockPort } from '@domain/common/ports/clock.port';
 
 export interface ListClientAppointmentsInput {
   clientId: string;
   onlyUpcoming?: boolean;
+  scope?: ClientAppointmentScope;
 }
 
 @Injectable()
@@ -29,6 +31,7 @@ export class ListClientAppointmentsUseCase {
       clientId: input.clientId,
       statuses: input.onlyUpcoming ? ACTIVE_APPOINTMENT_STATUSES : undefined,
       from: input.onlyUpcoming ? this.clock.now() : undefined,
+      scope: input.scope,
     });
   }
 }

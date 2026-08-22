@@ -23,6 +23,8 @@ export interface RecordInboundMessageInput {
   clientName: string;
   kind: MessageKind;
   content: string | null;
+  inReplyToProviderMessageId?: string | null;
+  allowRecovery?: boolean;
   occurredAt: Date;
 }
 
@@ -50,8 +52,8 @@ export class RecordInboundMessageUseCase {
     input: RecordInboundMessageInput,
   ): Promise<RecordedInboundMessage> {
     const client = await this.clients.findOrCreate({
-      name: input.clientName,
       phoneE164: input.clientPhoneE164,
+      whatsappProfileName: input.clientName,
     });
     const conversation = await this.conversations.findOrCreate({
       clientId: client.id,
@@ -64,6 +66,7 @@ export class RecordInboundMessageUseCase {
       direction: MessageDirection.INBOUND,
       kind: input.kind,
       content: input.content,
+      inReplyToProviderMessageId: input.inReplyToProviderMessageId ?? null,
       occurredAt: input.occurredAt,
     });
 
@@ -73,7 +76,8 @@ export class RecordInboundMessageUseCase {
       // A webhook the provider repeats must not queue a second answer.
       needsReply:
         Boolean(recorded) ||
-        !(await this.messages.hasReplyTo(input.providerMessageId)),
+        (Boolean(input.allowRecovery) &&
+          !(await this.messages.hasReplyTo(input.providerMessageId))),
     };
   }
 }

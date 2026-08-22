@@ -19,9 +19,11 @@ export interface SystemPromptInput {
   calendar: string;
   businessCatalog: string;
   clientState: string;
-  // Empty when WhatsApp gave no usable profile name, which drops the fragment that greets
+  // Empty when there is no confirmed name, which drops the fragment that greets
   // her by name instead of rendering a placeholder.
   clientName: string;
+  // Set only when the confirmed name is still missing, which shows the pending fragment.
+  clientNamePending: string;
 }
 
 export interface ComposedSystemPrompt {
@@ -52,6 +54,7 @@ export function buildSystemPrompt(
     calendar: input.calendar,
     businessCatalog: input.businessCatalog,
     clientState: input.clientState,
+    clientNamePending: input.clientNamePending,
   };
 
   const linesOf = (layer: PromptLayer): string[] =>

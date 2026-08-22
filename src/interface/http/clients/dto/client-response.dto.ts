@@ -6,11 +6,18 @@ export class ClientResponseDto {
   @ApiProperty()
   id: string;
 
-  @ApiProperty()
-  name: string;
+  @ApiProperty({ nullable: true })
+  name: string | null;
 
-  @ApiProperty({ example: '+59171234567' })
-  phoneE164: string;
+  @ApiProperty({ example: '+59171234567', nullable: true })
+  phoneE164: string | null;
+
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'WhatsApp pushName only. Never treat as the confirmed client name.',
+  })
+  whatsappProfileName: string | null;
 
   @ApiPropertyOptional({ nullable: true })
   email: string | null;
@@ -35,6 +42,7 @@ export class ClientResponseDto {
       id: client.id,
       name: client.name,
       phoneE164: client.phoneE164,
+      whatsappProfileName: client.whatsappProfileName,
       email: client.email,
       birthDate: client.birthDate,
       identificationType: client.identificationType,

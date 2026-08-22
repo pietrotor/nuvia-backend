@@ -113,10 +113,10 @@ export class AgentPromptComposer {
       );
     }
 
-    const [businessCatalog, clientState, clientName] = await Promise.all([
+    const [businessCatalog, clientState, identity] = await Promise.all([
       this.composeCatalog(input),
       this.composeClientState(input),
-      this.composeClientName(input.clientId),
+      this.composeClientIdentity(input.clientId),
     ]);
 
     return buildSystemPrompt({
@@ -130,7 +130,8 @@ export class AgentPromptComposer {
       calendar: renderCalendar(input.now, input.timezone),
       businessCatalog,
       clientState,
-      clientName,
+      clientName: identity.clientName,
+      clientNamePending: identity.clientNamePending,
     });
   }
 
@@ -242,6 +243,7 @@ export class AgentPromptComposer {
         clientChoosesProfessional: boolean;
         branchNames: string[];
         keywords: string[];
+        bookingQuestions: string[];
       }
     >();
     for (const { branch, offers } of offersByBranch) {
@@ -264,6 +266,9 @@ export class AgentPromptComposer {
             clientChoosesProfessional: service.clientChoosesProfessional,
             branchNames: [branch.name],
             keywords: service.keywords ?? [],
+            bookingQuestions: service
+              .activeBookingQuestions()
+              .map((question) => question.prompt),
           });
         }
       }
@@ -332,6 +337,9 @@ export class AgentPromptComposer {
             .filter((name): name is string => name !== undefined),
           clientChoosesProfessional: service.clientChoosesProfessional,
           keywords: service.keywords ?? [],
+          bookingQuestions: service
+            .activeBookingQuestions()
+            .map((question) => question.prompt),
         };
       })
       .filter((row): row is NonNullable<typeof row> => row !== null);
@@ -357,6 +365,7 @@ export class AgentPromptComposer {
     const appointments = await this.listClientAppointments.execute({
       clientId: input.clientId,
       onlyUpcoming: true,
+      scope: 'managed',
     });
 
     return renderClientState(
@@ -364,9 +373,16 @@ export class AgentPromptComposer {
     );
   }
 
-  private async composeClientName(clientId: string): Promise<string> {
+  private async composeClientIdentity(clientId: string): Promise<{
+    clientName: string;
+    clientNamePending: string;
+  }> {
     const client = await this.clients.findById(clientId);
-    return promptClientName(client?.name);
+    const clientName = promptClientName(client?.name);
+    return {
+      clientName,
+      clientNamePending: clientName ? '' : 'pendiente',
+    };
   }
 
   private toClientState(
@@ -383,6 +399,10 @@ export class AgentPromptComposer {
       ),
       awaitingDeposit:
         view.appointment.status === AppointmentStatus.PENDING_DEPOSIT,
+      attendeeName:
+        view.appointment.clientId === view.appointment.bookingContactClientId
+          ? null
+          : view.client.name,
     };
   }
 

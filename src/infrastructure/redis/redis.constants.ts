@@ -3,3 +3,4 @@
 // exhausts `maxclients` and makes pub/sub collapse under load.
 export const REDIS_PUBLISHER = 'RedisPublisher';
 export const REDIS_SUBSCRIBER = 'RedisSubscriber';
+export const REDIS_COMMANDS = 'RedisCommands';

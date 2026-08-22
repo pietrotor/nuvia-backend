@@ -203,6 +203,46 @@ describe('ReplyToConversationUseCase', () => {
     expect(messaging.markAsRead).not.toHaveBeenCalled();
   });
 
+  it('runs the agent for a receipt image with a caption', async () => {
+    const image = buildInbound({
+      id: 'm-image',
+      providerMessageId: 'wamid.image',
+      kind: MessageKind.IMAGE,
+      content: 'Este es para el viernes',
+    });
+    messages.findRecent.mockResolvedValue([image]);
+
+    await useCase.execute({ ...input, providerMessageId: 'wamid.image' });
+
+    expect(orchestrator.respond).toHaveBeenCalledWith(
+      [image],
+      expect.any(Object),
+      {
+        providerMessageId: 'wamid.image',
+        text: 'Este es para el viernes',
+      },
+    );
+  });
+
+  it('runs the agent for a receipt image preceded by unanswered text', async () => {
+    const text = buildInbound({ content: 'Ahora mando el del jueves' });
+    const image = buildInbound({
+      id: 'm-image',
+      providerMessageId: 'wamid.image',
+      kind: MessageKind.IMAGE,
+      content: null,
+    });
+    messages.findRecent.mockResolvedValue([text, image]);
+
+    await useCase.execute({ ...input, providerMessageId: 'wamid.image' });
+
+    expect(orchestrator.respond).toHaveBeenCalledWith(
+      [text, image],
+      expect.any(Object),
+      { providerMessageId: 'wamid.image', text: null },
+    );
+  });
+
   it('short-circuits a pure greeting without calling the LLM', async () => {
     useCase = new ReplyToConversationUseCase(
       conversations as unknown as ConversationRepository,

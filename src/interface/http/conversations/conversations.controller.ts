@@ -70,7 +70,7 @@ export class ConversationsController {
     @Query() pagination: PaginationDto,
   ): Promise<MessageResponseDto[]> {
     const messages = await this.listMessages.execute(id, pagination);
-    return messages.map(MessageResponseDto.from);
+    return messages.map((message) => MessageResponseDto.from(message));
   }
 
   @Post(':id/pause')

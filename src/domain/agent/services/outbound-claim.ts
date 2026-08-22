@@ -4,6 +4,8 @@
 export enum OutboundClaim {
   BOOKING = 'booking',
   DEPOSIT_QR = 'deposit_qr',
+  DEPOSIT_RECEIPT_ASSIGNMENT = 'deposit_receipt_assignment',
+  DEPOSIT_RECEIPT_EXPECTATION = 'deposit_receipt_expectation',
 }
 
 // Left behind when a booking queued the deposit image. A booking on its own proves
@@ -15,6 +17,8 @@ export const DEPOSIT_QR_QUEUED = 'deposit_qr_queued';
 export const CLAIM_EVIDENCE: Readonly<Record<OutboundClaim, string[]>> = {
   [OutboundClaim.BOOKING]: ['book_appointment', 'reschedule_appointment'],
   [OutboundClaim.DEPOSIT_QR]: [DEPOSIT_QR_QUEUED, 'resend_deposit_qr'],
+  [OutboundClaim.DEPOSIT_RECEIPT_ASSIGNMENT]: ['assign_deposit_receipt'],
+  [OutboundClaim.DEPOSIT_RECEIPT_EXPECTATION]: ['expect_deposit_receipt'],
 };
 
 // Only assertions, never offers or questions: "¿confirmás para reservar?" must not trip the
@@ -40,14 +44,39 @@ const CLAIM_PATTERNS: Readonly<Record<OutboundClaim, RegExp[]>> = {
     /\bte\s+(lo\s+)?(reenvio|reenvie|reenvi)\b/,
     /\b(deberias|vas\s+a)\s+recibir\s+(el|un)\s+qr\b/,
   ],
+  [OutboundClaim.DEPOSIT_RECEIPT_ASSIGNMENT]: [
+    /\bcomprobante\s+(ya\s+)?(quedo|esta)\s+(asignad|corregid)/,
+    /\b(ya\s+)?(asigne|corregi|movi)\b[^.\n]{0,24}\bcomprobante\b/,
+    /\b(el|ese|tu)\s+comprobante\s+(quedo|es|era)\s+para\b/,
+    /\bcomprobante\s+(ya\s+)?(quedo|esta)\s+para\b/,
+    /\b(ya\s+)?(pase|movi)\b[^.\n]{0,20}\bcomprobante\b/,
+  ],
+  [OutboundClaim.DEPOSIT_RECEIPT_EXPECTATION]: [
+    /\b(la\s+)?proxima\s+(imagen|captura|foto|comprobante)\s+(va|quedara|la\s+asignare)\b/,
+    /\bcuando\s+(la\s+)?(mandes|envies)\b[^.\n]{0,32}\b(la\s+)?(asignare|pondre|tomare)\b/,
+  ],
 };
 
 export function detectOutboundClaims(text: string): OutboundClaim[] {
-  const normalized = normalize(text);
+  const normalized = dropInterrogatives(normalize(text));
 
   return Object.values(OutboundClaim).filter((claim) =>
     CLAIM_PATTERNS[claim].some((pattern) => pattern.test(normalized)),
   );
+}
+
+// Stripping accents makes the subjunctive of an offer identical to the past tense of a
+// claim ("¿querés que te reenvíe el QR?" reads as "ya te reenvié el QR"), so an offer to
+// resend used to trip the guard and hand the client off mid-conversation. Questions are
+// dropped before matching: an answer that asks announces nothing. A claim buried inside a
+// question ("ya te reenvié el QR, ¿lo viste?") goes unflagged, which is the cheaper
+// mistake — the guard replaces the answer and pauses the bot when it fires.
+function dropInterrogatives(text: string): string {
+  return text
+    .replace(/¿[^?]*\??/g, ' ')
+    .split(/(?<=[.!\n])/)
+    .filter((sentence) => !sentence.trim().endsWith('?'))
+    .join(' ');
 }
 
 // Claims the answer makes without a trace to back them.

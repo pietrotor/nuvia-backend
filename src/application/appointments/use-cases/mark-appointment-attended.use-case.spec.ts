@@ -44,6 +44,8 @@ describe('MarkAppointmentAttendedUseCase', () => {
       appointmentRepository as unknown as AppointmentRepository,
       { record: jest.fn() } as unknown as AuditRecorder,
       { changed: jest.fn() } as unknown as AgendaEventPublisher,
+      { recordAttended: jest.fn().mockResolvedValue(undefined) } as never,
+      { run: (fn: () => Promise<unknown>) => fn() } as never,
     );
   });
 

@@ -17,6 +17,10 @@ type OpenRouterTextPart = {
 
 @Injectable()
 export class OpenRouterLlmAdapter extends OpenAiCompatibleLlmAdapter {
+  protected override get providerName(): string {
+    return 'openrouter';
+  }
+
   protected override extraHeaders(input: LlmChatInput): Record<string, string> {
     const headers: Record<string, string> = {};
     const referer = this.config.get<string>('LLM_HTTP_REFERER')?.trim();
@@ -102,6 +106,7 @@ export class OpenRouterLlmAdapter extends OpenAiCompatibleLlmAdapter {
     if (!raw) return undefined;
     if (raw !== 'low' && raw !== 'medium' && raw !== 'high') {
       throw new InternalError(ErrorCode.LLM_NOT_CONFIGURED, {
+        provider: this.providerName,
         field: 'LLM_REASONING_EFFORT',
       });
     }

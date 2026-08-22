@@ -60,6 +60,7 @@ describe('StaticPromptCatalogAdapter', () => {
         businessCatalog: 'Servicios:\n- Hidrafacial — id svc-1 — 75 min',
         clientState: 'no tiene ninguna reserva registrada',
         clientName: 'Ana',
+        clientNamePending: '',
       });
 
       expect(staticText).toContain('Nunca finjas ser una persona humana');

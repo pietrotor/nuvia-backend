@@ -275,6 +275,7 @@ describe('AgentPromptComposer', () => {
       expect(listClientAppointments.execute).toHaveBeenCalledWith({
         clientId: 'client-id',
         onlyUpcoming: true,
+        scope: 'managed',
       });
       expect(volatileText).toContain('no tiene ninguna reserva registrada');
     });

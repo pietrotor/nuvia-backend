@@ -9,13 +9,21 @@ import {
   Patch,
   Post,
   Query,
+  Res,
+  UploadedFile,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
   ApiOperation,
+  ApiProduces,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
+import { Response } from 'express';
 
 import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
 import { Permission } from '@domain/users/value-objects/permission.vo';
@@ -33,6 +41,14 @@ import { CancelAppointmentDto } from '@application/appointments/dto/cancel-appoi
 import { GetAvailabilityDto } from '@application/appointments/dto/get-availability.dto';
 import { ListAppointmentsDto } from '@application/appointments/dto/list-appointments.dto';
 import { RescheduleAppointmentDto } from '@application/appointments/dto/reschedule-appointment.dto';
+import { GetDepositReceiptImageUseCase } from '@application/deposits/use-cases/get-deposit-receipt-image.use-case';
+import { UploadDepositReceiptUseCase } from '@application/deposits/use-cases/upload-deposit-receipt.use-case';
+import { VerifyDepositUseCase } from '@application/deposits/use-cases/verify-deposit.use-case';
+import { InvalidDepositReceiptFileError } from '@domain/deposits/exceptions/deposit-qr.exceptions';
+import {
+  DEPOSIT_QR_MAX_SIZE_BYTES,
+  DEPOSIT_QR_MAX_SIZE_MB,
+} from '@domain/deposits/services/deposit-qr-image-validator';
 import { AppointmentChangeResponseDto } from './dto/appointment-change-response.dto';
 import { AppointmentResponseDto } from './dto/appointment-response.dto';
 import { AppointmentViewResponseDto } from './dto/appointment-view-response.dto';
@@ -51,6 +67,9 @@ export class AppointmentsController {
     private readonly cancelAppointment: CancelAppointmentUseCase,
     private readonly markAttended: MarkAppointmentAttendedUseCase,
     private readonly markNoShow: MarkAppointmentNoShowUseCase,
+    private readonly uploadDepositReceipt: UploadDepositReceiptUseCase,
+    private readonly getDepositReceiptImage: GetDepositReceiptImageUseCase,
+    private readonly verifyDeposit: VerifyDepositUseCase,
   ) {}
 
   @Get('availability')
@@ -159,5 +178,67 @@ export class AppointmentsController {
     @Param('id', ParseUUIDPipe) id: string,
   ): Promise<AppointmentResponseDto> {
     return AppointmentResponseDto.from(await this.markNoShow.execute(id));
+  }
+
+  @Post(':id/deposit-receipt')
+  @Auth(Permission.APPOINTMENTS_WRITE)
+  @HttpCode(HttpStatus.OK)
+  @UseInterceptors(
+    FileInterceptor('file', {
+      limits: { fileSize: DEPOSIT_QR_MAX_SIZE_BYTES },
+    }),
+  )
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      required: ['file'],
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @ApiOperation({ summary: 'Uploads a deposit receipt for an appointment' })
+  @ApiResponse({ status: 200, type: AppointmentResponseDto })
+  async uploadReceipt(
+    @Param('id', ParseUUIDPipe) id: string,
+    @UploadedFile() file?: Express.Multer.File,
+  ): Promise<AppointmentResponseDto> {
+    if (!file) {
+      throw new InvalidDepositReceiptFileError(DEPOSIT_QR_MAX_SIZE_MB);
+    }
+    return AppointmentResponseDto.from(
+      await this.uploadDepositReceipt.execute(id, {
+        body: file.buffer,
+        mimeType: file.mimetype,
+      }),
+    );
+  }
+
+  @Get(':id/deposit-receipt/image')
+  @Auth(Permission.APPOINTMENTS_READ)
+  @ApiProduces('image/png', 'image/jpeg', 'image/webp')
+  @ApiOperation({ summary: 'Downloads an appointment deposit receipt' })
+  @ApiResponse({ status: 200, description: 'The deposit receipt image' })
+  async receiptImage(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Res() response: Response,
+  ): Promise<void> {
+    const image = await this.getDepositReceiptImage.execute(id);
+    response.setHeader('Content-Type', image.mimeType);
+    response.setHeader('Content-Length', image.body.length);
+    response.setHeader('Cache-Control', 'private, no-store');
+    response.send(image.body);
+  }
+
+  @Post(':id/verify-deposit')
+  @Auth(Permission.APPOINTMENTS_WRITE)
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Manually verifies an appointment deposit' })
+  @ApiResponse({ status: 200, type: AppointmentResponseDto })
+  async verify(
+    @Param('id', ParseUUIDPipe) id: string,
+  ): Promise<AppointmentResponseDto> {
+    return AppointmentResponseDto.from(await this.verifyDeposit.execute(id));
   }
 }

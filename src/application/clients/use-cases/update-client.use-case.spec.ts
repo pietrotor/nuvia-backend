@@ -1,4 +1,6 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { PhoneNumberService } from '@application/common/services/phone-number.service';
+import { TenantCountryService } from '@application/common/services/tenant-country.service';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
 import { Client } from '@domain/clients/entities/client.entity';
 import { ClientRepository } from '@domain/clients/repositories/client.repository';
@@ -24,6 +26,12 @@ describe('UpdateClientUseCase', () => {
     Pick<ClientRepository, 'findById' | 'findByPhone' | 'update'>
   >;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
+  let phoneNumbers: jest.Mocked<
+    Pick<PhoneNumberService, 'resolvePhoneForWrite'>
+  >;
+  let tenantCountry: jest.Mocked<
+    Pick<TenantCountryService, 'getCurrentCountryCode'>
+  >;
   let useCase: UpdateClientUseCase;
 
   beforeEach(() => {
@@ -35,10 +43,22 @@ describe('UpdateClientUseCase', () => {
         .mockResolvedValue(client({ name: 'María Actualizada' })),
     };
     audit = { record: jest.fn() };
+    phoneNumbers = {
+      resolvePhoneForWrite: jest
+        .fn()
+        .mockImplementation(
+          (input: string | null | undefined) => input ?? null,
+        ),
+    };
+    tenantCountry = {
+      getCurrentCountryCode: jest.fn().mockResolvedValue('BO'),
+    };
 
     useCase = new UpdateClientUseCase(
       clientRepository as unknown as ClientRepository,
       audit as unknown as AuditRecorder,
+      phoneNumbers as unknown as PhoneNumberService,
+      tenantCountry as unknown as TenantCountryService,
     );
   });
 

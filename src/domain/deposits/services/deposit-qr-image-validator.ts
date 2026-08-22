@@ -48,17 +48,24 @@ export function assertValidDepositQrImage(input: {
   mimeType: string;
   body: Uint8Array;
 }): void {
+  if (!isValidDepositImage(input)) {
+    throw new InvalidDepositQrFileError(DEPOSIT_QR_MAX_SIZE_MB);
+  }
+}
+
+export function isValidDepositImage(input: {
+  mimeType: string;
+  body: Uint8Array;
+}): boolean {
   const isAllowedType = DEPOSIT_QR_ALLOWED_MIME_TYPES.some(
     (mimeType) => mimeType === input.mimeType,
   );
   const sizeBytes = input.body.length;
   const isAllowedSize = sizeBytes > 0 && sizeBytes <= DEPOSIT_QR_MAX_SIZE_BYTES;
 
-  if (
-    !isAllowedType ||
-    !isAllowedSize ||
-    !matchesDeclaredType(input.body, input.mimeType)
-  ) {
-    throw new InvalidDepositQrFileError(DEPOSIT_QR_MAX_SIZE_MB);
-  }
+  return (
+    isAllowedType &&
+    isAllowedSize &&
+    matchesDeclaredType(input.body, input.mimeType)
+  );
 }

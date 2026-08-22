@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Inject,
   Param,
   ParseUUIDPipe,
   Patch,
@@ -11,6 +12,12 @@ import { ApiOperation, ApiTags } from '@nestjs/swagger';
 
 import { ChangeBusinessCategoryDto } from '@application/business-config/dto/change-business-category.dto';
 import { ChangeBusinessCategoryUseCase } from '@application/business-config/use-cases/change-business-category.use-case';
+import { GetBusinessConfigUseCase } from '@application/business-config/use-cases/get-business-config.use-case';
+import {
+  BUSINESS_CONFIG_REPOSITORY,
+  BusinessConfigRepository,
+} from '@domain/business-config/repositories/business-config.repository';
+import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
 import { CreateTenantDto } from '@application/tenants/dto/create-tenant.dto';
 import { UpdateTenantDto } from '@application/tenants/dto/update-tenant.dto';
 import { CreateTenantUseCase } from '@application/tenants/use-cases/create-tenant.use-case';
@@ -32,6 +39,9 @@ export class TenantsController {
     private readonly getTenant: GetTenantUseCase,
     private readonly updateTenant: UpdateTenantUseCase,
     private readonly changeBusinessCategory: ChangeBusinessCategoryUseCase,
+    private readonly getBusinessConfig: GetBusinessConfigUseCase,
+    @Inject(BUSINESS_CONFIG_REPOSITORY)
+    private readonly businessConfigRepository: BusinessConfigRepository,
   ) {}
 
   @Get('me')
@@ -40,7 +50,15 @@ export class TenantsController {
   async findMine(
     @CurrentTenant() tenantId: string,
   ): Promise<TenantResponseDto> {
-    return TenantResponseDto.from(await this.getTenant.execute(tenantId));
+    const [tenant, config] = await Promise.all([
+      this.getTenant.execute(tenantId),
+      this.getBusinessConfig.execute().catch(() => null),
+    ]);
+
+    return TenantResponseDto.from(
+      tenant,
+      config?.countryCode ?? DEFAULT_COUNTRY_CODE,
+    );
   }
 
   @Patch('me')
@@ -76,8 +94,17 @@ export class TenantsController {
   @ApiOperation({ summary: 'Lists all the businesses (support only)' })
   async findAll(): Promise<TenantResponseDto[]> {
     const tenants = await this.listTenants.execute();
+    const countryCodes =
+      await this.businessConfigRepository.findCountryCodesByTenantIdsUnscoped(
+        tenants.map((tenant) => tenant.id),
+      );
 
-    return tenants.map(TenantResponseDto.from);
+    return tenants.map((tenant) =>
+      TenantResponseDto.from(
+        tenant,
+        countryCodes.get(tenant.id) ?? DEFAULT_COUNTRY_CODE,
+      ),
+    );
   }
 
   @Patch(':tenantId/business-category')

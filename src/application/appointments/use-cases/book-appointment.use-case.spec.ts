@@ -79,6 +79,7 @@ describe('BookAppointmentUseCase', () => {
   let now: Date;
   let clock: ClockPort;
   let audit: jest.Mocked<Pick<AuditRecorder, 'record'>>;
+  let notifications: { recordBooked: jest.Mock };
   let useCase: BookAppointmentUseCase;
 
   beforeEach(() => {
@@ -97,6 +98,9 @@ describe('BookAppointmentUseCase', () => {
     now = new Date('2026-08-02T00:00:00.000Z');
     clock = { now: () => now };
     audit = { record: jest.fn() };
+    notifications = { recordBooked: jest.fn().mockResolvedValue(undefined) };
+
+    const reminders = { syncPreVisit: jest.fn().mockResolvedValue(undefined) };
 
     const branchResolver = {
       resolve: jest.fn().mockResolvedValue(branch),
@@ -148,13 +152,16 @@ describe('BookAppointmentUseCase', () => {
       ),
       audit as unknown as AuditRecorder,
       { changed: jest.fn() } as unknown as AgendaEventPublisher,
+      notifications as never,
+      reminders as never,
+      { run: (fn: () => Promise<unknown>) => fn() } as never,
     );
 
     clientRepository.findById.mockResolvedValue(
       new Client({
         id: 'c1',
         tenantId: 't1',
-        name: 'Cliente',
+        name: 'María López',
         phoneE164: '+59170000001',
         notes: null,
       }),
@@ -240,6 +247,7 @@ describe('BookAppointmentUseCase', () => {
         currency: Currency.BOB,
       }),
     );
+    expect(notifications.recordBooked).toHaveBeenCalledWith(created);
   });
 
   it('rejects an active overlap', async () => {
@@ -266,6 +274,7 @@ describe('BookAppointmentUseCase', () => {
         startsAt: '2026-08-03T15:00:00.000Z',
       }),
     ).rejects.toBeInstanceOf(SlotUnavailableError);
+    expect(notifications.recordBooked).not.toHaveBeenCalled();
   });
 
   it('rejects inactive services', async () => {

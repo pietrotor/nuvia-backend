@@ -1,0 +1,3 @@
+CREATE INDEX "appointment_notification_deliveries_due_unscoped_idx" ON "appointment_notification_deliveries" USING btree ("next_attempt_at") WHERE "appointment_notification_deliveries"."status" in ('pending', 'deferred');--> statement-breakpoint
+CREATE INDEX "appointment_notification_deliveries_lease_unscoped_idx" ON "appointment_notification_deliveries" USING btree ("lease_until") WHERE "appointment_notification_deliveries"."status" = 'dispatching';--> statement-breakpoint
+CREATE INDEX "appointment_notification_events_unexpanded_unscoped_idx" ON "appointment_notification_events" USING btree ("next_attempt_at") WHERE "appointment_notification_events"."expanded_at" is null;

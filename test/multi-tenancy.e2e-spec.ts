@@ -244,7 +244,7 @@ describe('Multi-tenancy (e2e)', () => {
       .set('Authorization', `Bearer ${pasitosOwner}`)
       .expect(200);
 
-    expect(glow.body.agentPolicy).toEqual({
+    expect(glow.body.agentPolicy).toMatchObject({
       handoffAutoResumeMinutes: 30,
       emojiPolicy: 'none',
       businessNotes: 'Parqueo atrás',

@@ -4,6 +4,7 @@ import {
   LlmToolChoice,
   LlmUsage,
 } from '@domain/agent/ports/llm.port';
+import { ErrorCode } from '@domain/common/exceptions';
 import { AgentTraceSummary } from '@domain/agent/views/agent-trace-summary';
 
 export type AgentTracePhase = 'initial' | 'claim_retry' | 'schedule_retry';
@@ -55,6 +56,17 @@ export type AgentTraceStep =
       usage?: LlmUsage;
       finishReason?: LlmFinishReason;
       truncated?: boolean;
+    }
+  | {
+      type: 'llm_error';
+      round: number;
+      phase: AgentTracePhase;
+      code: ErrorCode;
+      provider?: string;
+      status?: number;
+      model?: string;
+      errorType?: string;
+      cause?: string;
     }
   | {
       type: 'tool_call';

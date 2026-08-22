@@ -1,8 +1,9 @@
 import { Client } from '../entities/client.entity';
 
 export interface CreateClientData {
-  name: string;
-  phoneE164: string;
+  name?: string | null;
+  phoneE164?: string | null;
+  whatsappProfileName?: string | null;
   email?: string | null;
   birthDate?: string | null;
   identificationType?: string | null;
@@ -12,8 +13,9 @@ export interface CreateClientData {
 }
 
 export interface UpdateClientData {
-  name?: string;
-  phoneE164?: string;
+  name?: string | null;
+  phoneE164?: string | null;
+  whatsappProfileName?: string | null;
   email?: string | null;
   birthDate?: string | null;
   identificationType?: string | null;
@@ -25,6 +27,7 @@ export interface UpdateClientData {
 export interface SearchClientsCriteria {
   // Matches name or phone. Absent means the first page of the whole book.
   term?: string;
+  searchTerms?: string[];
   limit: number;
   offset: number;
 }
@@ -38,6 +41,7 @@ export interface ClientRepository {
   create(data: CreateClientData): Promise<Client>;
   findOrCreate(data: CreateClientData): Promise<Client>;
   findById(id: string): Promise<Client | null>;
+  findByIds(ids: string[]): Promise<Client[]>;
   findByPhone(phoneE164: string): Promise<Client | null>;
   search(criteria: SearchClientsCriteria): Promise<ClientSearchResult>;
   update(id: string, data: UpdateClientData): Promise<Client | null>;

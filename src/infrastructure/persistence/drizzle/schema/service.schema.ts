@@ -10,6 +10,7 @@ import {
   primaryKey,
   check,
   text,
+  pgEnum,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -17,6 +18,11 @@ import { currencyEnum } from './currency.schema';
 import { tenants } from './tenant.schema';
 import { professionals } from './professional.schema';
 import { depositQrs } from './deposit.schema';
+
+export const bookingQuestionKindEnum = pgEnum('booking_question_kind', [
+  'text',
+  'yes_no',
+]);
 
 export const services = pgTable(
   'services',
@@ -108,3 +114,34 @@ export const professionalServices = pgTable(
 );
 
 export type ServiceSchema = typeof services.$inferSelect;
+
+export const serviceBookingQuestions = pgTable(
+  'service_booking_questions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    tenantId: uuid('tenant_id')
+      .notNull()
+      .references(() => tenants.id, { onDelete: 'cascade' }),
+    serviceId: uuid('service_id')
+      .notNull()
+      .references(() => services.id, { onDelete: 'cascade' }),
+    prompt: varchar('prompt', { length: 500 }).notNull(),
+    kind: bookingQuestionKindEnum('kind').notNull(),
+    isRequired: boolean('is_required').notNull().default(true),
+    sortOrder: integer('sort_order').notNull().default(0),
+    isActive: boolean('is_active').notNull().default(true),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (t) => [
+    index('service_booking_questions_service_idx').on(t.tenantId, t.serviceId),
+  ],
+);
+
+export type ServiceBookingQuestionSchema =
+  typeof serviceBookingQuestions.$inferSelect;

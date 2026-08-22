@@ -6,10 +6,12 @@ import {
   IsOptional,
   IsString,
   Matches,
+  MaxLength,
   MinLength,
   ValidateNested,
 } from 'class-validator';
 
+import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
 import { BusinessCategory } from '@domain/business-config/value-objects/business-category.vo';
 
 export class TenantOwnerDto {
@@ -27,9 +29,10 @@ export class TenantOwnerDto {
   @MinLength(8)
   password: string;
 
-  @ApiProperty({ example: '+59171234567', required: false })
+  @ApiProperty({ example: '71234567', required: false })
   @IsOptional()
-  @Matches(/^\+?[0-9]{8,15}$/)
+  @IsString()
+  @MaxLength(20)
   phone?: string;
 }
 
@@ -38,6 +41,12 @@ export class CreateTenantDto {
   @IsString()
   @MinLength(2)
   name: string;
+
+  @ApiProperty({ example: DEFAULT_COUNTRY_CODE, required: false })
+  @IsOptional()
+  @IsString()
+  @Matches(/^[A-Za-z]{2}$/)
+  countryCode?: string;
 
   @ApiProperty({ example: 'America/La_Paz', required: false })
   @IsOptional()

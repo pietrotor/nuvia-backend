@@ -63,7 +63,10 @@ services:
   # Perfil `stack`: corre la API dentro de la red de Docker para que Evolution
   # pueda entregar webhooks. Para desarrollo local sin contenedor: yarn start:dev.
   api:
-    image: node:20-bookworm-slim
+    build:
+      context: .
+      dockerfile: docker/api/Dockerfile
+    image: nuvia/api:dev
     profiles: ['stack']
     restart: unless-stopped
     depends_on:
@@ -74,12 +77,7 @@ services:
       - '3010:3010'
     container_name: nuvia_api
     working_dir: /app
-    # `nest start --watch` shells out to `ps` to restart the child process,
-    # and the slim image ships without procps.
-    command: >
-      sh -c "command -v ps >/dev/null ||
-             (apt-get update -qq && apt-get install -y -qq procps >/dev/null);
-             exec yarn start:dev"
+    command: yarn start:dev
     env_file:
       - .env
     environment:
