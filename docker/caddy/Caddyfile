@@ -1,0 +1,27 @@
+{
+	email admin@nuvi.lat
+}
+
+api.nuvi.lat {
+	encode gzip
+
+	handle /api/v1/events* {
+		reverse_proxy api:3010 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy api:3010 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+}

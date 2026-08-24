@@ -1,0 +1,9 @@
+node_modules
+dist
+postgres
+/storage
+logs
+.git
+.env
+coverage
+.agents

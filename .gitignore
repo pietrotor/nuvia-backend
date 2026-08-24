@@ -4,7 +4,7 @@
 *.tsbuildinfo
 
 postgres/
-storage/
+/storage/
 .env
 
 

@@ -1,140 +1,99 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="200" alt="Nest Logo" /></a>
-</p>
+# Nuvi API
 
-# Base API
+REST API for Nuvi: multi-tenant agenda, WhatsApp agent, deposits, and owner panel backend.
 
-REST API built with NestJS and PostgreSQL using Drizzle ORM. Includes JWT authentication with Role-Based Access Control (RBAC).
+Stack: **NestJS 11**, **PostgreSQL**, **Drizzle**, **Redis / BullMQ**, **Evolution API** (WhatsApp). Package manager: **yarn**. Global prefix `/api/v1`. Swagger at `/api/v1/swagger` (disabled when `NODE_ENV=production`).
 
-## 🚀 Installation and Setup
+This repo is the API only. The panel is `nuvia-frontend` (Vercel). Product and architecture live in the sibling docs of the workspace (`docs/prd-nuvi-v1.md`, `docs/architecture.md`).
 
-### 1. Clone the project
-
-```bash
-git clone <repository-url>
-cd nestjs-postgresql-base-project
-```
-
-### 2. Install dependencies
-
-```bash
-yarn install
-```
-
-### 3. Configure environment variables
+## Local development
 
 ```bash
 cp .env.template .env
+yarn install
+docker compose up -d          # Postgres (5435), Redis, Evolution (8080)
+yarn db:migrate
+yarn start:dev                # http://localhost:3010
 ```
 
-Edit the `.env` file with your database credentials:
+`POST /api/v1/seed` recreates test tenants (owner + staff, password `Secreta123`). It **refuses to run in production**.
 
-```env
-DB_PASSWORD=MySecr3tPassWord@as2
-DB_NAME=TesloDB
-DB_HOST=localhost
-DB_PORT=5432
-DB_USERNAME=postgres
-
-PORT=3000
-HOST_API=http://localhost:3000/api
-
-JWT_SECRET=Est3EsMISE3Dsecreto32s
-```
-
-### 4. Start the database
+To run the API inside Docker (so Evolution can deliver webhooks without `host.docker.internal`):
 
 ```bash
-docker-compose up -d
+docker compose --profile stack up -d --build
 ```
 
-### 5. Generate and run Drizzle migrations
+### Scripts
+
+| Command | What it does |
+|---|---|
+| `yarn start:dev` | Nest with hot reload |
+| `yarn build` / `yarn start:prod` | Compile and run `dist/main` |
+| `yarn lint` / `yarn lint:check` / `yarn typecheck` | ESLint (fix / CI) + `tsc --noEmit` |
+| `yarn test` / `yarn test:e2e` | Unit tests; e2e **wipes local data** via seed |
+| `yarn db:generate` | New Drizzle migration from schema |
+| `yarn db:migrate` | Apply migrations |
+| `yarn db:studio` | Drizzle Studio |
+| `yarn bootstrap:owner` | Create the first tenant + owner (fails if any tenant exists) |
+
+## Production
+
+Pilot topology:
+
+| Surface | Where |
+|---|---|
+| Panel | Vercel — `https://nuvi.lat` |
+| API + Postgres + Redis + Evolution + Caddy | DigitalOcean droplet — `https://api.nuvi.lat` |
+
+WhatsApp webhooks must hit the droplet. Evolution is **not** published on the public internet; Caddy only reverse-proxies the API.
+
+Full droplet bootstrap, DNS, first owner, Vercel env, and backups: **[docs/deploy-digitalocean.md](docs/deploy-digitalocean.md)**.
+
+### Ship a backend change
+
+Push to `main` (or run **Actions → CI → Run workflow**). After lint/tests pass, GitHub Actions builds the API image, copies it to the droplet, checks out that SHA, and recreates Compose services. Setup: [docs/deploy-digitalocean.md](docs/deploy-digitalocean.md#github-actions).
+
+Manual fallback on the server (image built on the droplet, heavier on RAM):
 
 ```bash
-npm run db:generate
-npm run db:migrate
+cd /opt/nuvia-backend
+git pull
+docker compose -f docker-compose.prod.yaml up -d --build --no-deps api
 ```
 
-### 6. Start the development server
+`--no-deps` rebuilds and recreates **only** the API image. The container entrypoint runs Drizzle migrations, then starts Nest.
+
+Rebuild more than the API when you changed:
+
+| You changed | Recreate |
+|---|---|
+| `docker/evolution/**` | `evolution-api` (and then `api` if needed) |
+| `docker/caddy/Caddyfile` | `caddy` (`up -d --force-recreate caddy`) |
+| `docker-compose.prod.yaml` or DB/Redis env | full `up -d --build` |
+
+Do **not** copy a new `.env` from git. `.env` is gitignored and stays on the droplet. After pulling, only edit `.env` if you added a **new** variable (see `.env.production.template`).
+
+Checks:
 
 ```bash
-yarn start:dev
+curl -fsS https://api.nuvi.lat/api/v1/health
+docker compose -f docker-compose.prod.yaml logs -f --tail=80 api
 ```
 
-### 7. Run the initial data seed
+### Environment
 
-Access the following URL in your browser or using an HTTP client:
+| File | Use |
+|---|---|
+| `.env.template` | Local development |
+| `.env.production.template` | Copy to `.env` **once** on the droplet |
 
-```
-GET http://localhost:3000/api/seed
-```
+Secrets (`JWT_SECRET`, `DB_PASSWORD`, `REDIS_PASSWORD`, `EVOLUTION_API_KEY`, `WEBHOOK_SECRET`) must be hex from `openssl rand -hex 32`. Redis and Evolution connection URIs break on `@`, `:`, or `/` in the password.
 
-## 📚 API Documentation
+`CORS_ORIGINS` must list the panel origins (`https://nuvi.lat`, `https://www.nuvi.lat`). Compose **overrides** `DB_HOST`, `REDIS_*`, `EVOLUTION_API_URL`, `WEBHOOK_PUBLIC_URL`, and local storage path so containers talk on the internal network.
 
-Once the server is running, access the Swagger documentation at:
+Storage in V1 is the `api_storage` volume (`STORAGE_DRIVER=local`), not S3.
 
-```
-http://localhost:3000/api
-```
+## Auth roles
 
-## 🛠️ Available Scripts
-
-### Development
-
-```bash
-yarn start:dev          # Start server with hot reload
-yarn start:debug        # Start in debug mode
-```
-
-### Production
-
-```bash
-yarn build              # Build project
-yarn start:prod         # Start in production
-```
-
-### Database
-
-```bash
-npm run db:generate     # Generate Drizzle migrations
-npm run db:migrate      # Run migrations
-npm run db:studio       # Open Drizzle Studio (visual UI)
-```
-
-### Testing
-
-```bash
-yarn test               # Run unit tests
-yarn test:watch         # Run tests in watch mode
-yarn test:cov           # Run tests with coverage
-yarn test:e2e           # Run end-to-end tests
-```
-
-### Code Quality
-
-```bash
-yarn lint               # ESLint with auto-fix
-yarn format             # Format with Prettier
-```
-
-## 🔐 Authentication
-
-The project includes JWT authentication with the following endpoints:
-
-- `POST /api/auth/register` - Register new user
-- `POST /api/auth/login` - Login
-- `GET /api/auth/check-status` - Check authentication status
-
-## 👥 User Roles
-
-- **ADMIN** - Full system access
-- **USER** - Limited access
-
-## 🗄️ Tech Stack
-
-- **Framework:** NestJS
-- **Database:** PostgreSQL
-- **ORM:** Drizzle ORM
-- **Authentication:** JWT + Passport
-- **Validation:** class-validator + class-transformer
-- **Documentation:** Swagger/OpenAPI
+`owner` and `staff` (in-tenant), `superadmin` (no tenant). JWT payload is `{ sub, tenantId, role }`.

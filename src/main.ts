@@ -25,8 +25,16 @@ async function bootstrap() {
     );
   }
 
+  const corsOrigins = process.env.CORS_ORIGINS?.split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
   app.enableCors({
-    origin: process.env.CORS_ORIGINS?.split(',').map((o) => o.trim()) ?? true,
+    origin:
+      corsOrigins && corsOrigins.length > 0
+        ? corsOrigins
+        : process.env.NODE_ENV === 'production'
+          ? false
+          : true,
     credentials: true,
   });
 
@@ -38,14 +46,16 @@ async function bootstrap() {
     }),
   );
 
-  const config = new DocumentBuilder()
-    .setTitle('Nuvi API')
-    .setDescription('API de agenda y agente WhatsApp multi-tenant')
-    .setVersion('1.0')
-    .addBearerAuth()
-    .build();
-  const document = SwaggerModule.createDocument(app, config);
-  SwaggerModule.setup('api/v1/swagger', app, document);
+  if (process.env.NODE_ENV !== 'production') {
+    const config = new DocumentBuilder()
+      .setTitle('Nuvi API')
+      .setDescription('API de agenda y agente WhatsApp multi-tenant')
+      .setVersion('1.0')
+      .addBearerAuth()
+      .build();
+    const document = SwaggerModule.createDocument(app, config);
+    SwaggerModule.setup('api/v1/swagger', app, document);
+  }
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

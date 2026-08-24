@@ -37,6 +37,7 @@ import { ScheduleBlocksModule } from '@interface/http/schedule-blocks/schedule-b
 import { MessagingModule } from '@interface/http/messaging/messaging.module';
 import { EventsModule } from '@interface/http/events/events.module';
 import { BranchesModule } from '@interface/http/branches/branches.module';
+import { HealthModule } from '@interface/http/health/health.module';
 import { SubscriptionsHttpModule } from '@interface/http/subscriptions/subscriptions.module';
 
 @Module({
@@ -65,6 +66,7 @@ import { SubscriptionsHttpModule } from '@interface/http/subscriptions/subscript
     AuthModule,
     UsersModule,
     TenantsModule,
+    HealthModule,
     AdminModule,
     SeedModule,
     WebhooksModule,

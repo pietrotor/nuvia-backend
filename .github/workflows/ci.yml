@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  ci:
+    name: Lint, test, build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: ci-${{ github.ref }}
+      cancel-in-progress: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: yarn
+
+      - run: yarn install --frozen-lockfile
+      - run: yarn lint:check
+      - run: yarn typecheck
+      - run: yarn test
+      - run: yarn build
+
+  deploy:
+    name: Deploy to droplet
+    needs: ci
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    concurrency:
+      group: production-droplet
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build API image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/api/Dockerfile
+          tags: nuvia/api:prod
+          load: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Configure SSH
+        env:
+          DROPLET_SSH_KEY: ${{ secrets.DROPLET_SSH_KEY }}
+          DROPLET_HOST: ${{ secrets.DROPLET_HOST }}
+          DROPLET_USER: ${{ secrets.DROPLET_USER }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$DROPLET_SSH_KEY" | tr -d '\r' > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$DROPLET_HOST" >> ~/.ssh/known_hosts
+          cat >> ~/.ssh/config <<EOF
+          Host droplet
+            HostName ${DROPLET_HOST}
+            User ${DROPLET_USER}
+            IdentityFile ~/.ssh/deploy_key
+            IdentitiesOnly yes
+          EOF
+          chmod 600 ~/.ssh/config
+
+      - name: Release on droplet
+        env:
+          SHA: ${{ github.sha }}
+        run: |
+          BEFORE=$(ssh droplet 'git -C /opt/nuvia-backend rev-parse HEAD')
+          ssh droplet "git -C /opt/nuvia-backend fetch origin '$SHA' && git -C /opt/nuvia-backend reset --hard '$SHA'"
+          docker save nuvia/api:prod | gzip -1 | ssh droplet 'gunzip | docker load'
+          ssh droplet "BEFORE_SHA='$BEFORE' API_IMAGE_PRELOADED=1 bash /opt/nuvia-backend/scripts/prod-release.sh"
+          for i in $(seq 1 36); do
+            if ssh droplet 'curl -fsS http://127.0.0.1/api/v1/health'; then
+              exit 0
+            fi
+            sleep 5
+          done
+          echo 'API did not become healthy within 3 minutes'
+          ssh droplet 'docker compose -f /opt/nuvia-backend/docker-compose.prod.yaml logs --tail=80 api'
+          exit 1
