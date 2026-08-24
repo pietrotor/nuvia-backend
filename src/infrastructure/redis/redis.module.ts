@@ -10,11 +10,15 @@ import {
 
 const RECONNECT_CEILING_MS = 5_000;
 
-const baseOptions = (config: ConfigService): RedisOptions => ({
-  host: config.get<string>('REDIS_HOST', 'localhost'),
-  port: Number(config.get<string>('REDIS_PORT', '6379')),
-  retryStrategy: (attempt) => Math.min(attempt * 200, RECONNECT_CEILING_MS),
-});
+const baseOptions = (config: ConfigService): RedisOptions => {
+  const password = config.get<string>('REDIS_PASSWORD')?.trim();
+  return {
+    host: config.get<string>('REDIS_HOST', 'localhost'),
+    port: Number(config.get<string>('REDIS_PORT', '6379')),
+    ...(password ? { password } : {}),
+    retryStrategy: (attempt) => Math.min(attempt * 200, RECONNECT_CEILING_MS),
+  };
+};
 
 const commandClientFactory = (config: ConfigService): Redis =>
   new Redis({

@@ -36,6 +36,9 @@ export { APPOINTMENT_REMINDERS_QUEUE } from './queue.constants';
         connection: {
           host: config.get<string>('REDIS_HOST', 'localhost'),
           port: Number(config.get<string>('REDIS_PORT', '6379')),
+          ...(config.get<string>('REDIS_PASSWORD')?.trim()
+            ? { password: config.get<string>('REDIS_PASSWORD') }
+            : {}),
         },
       }),
     }),
