@@ -2,26 +2,26 @@
 	email admin@nuvi.lat
 }
 
-api.nuvi.lat {
-	encode gzip
-
-	handle /api/v1/events* {
-		reverse_proxy api:3010 {
-			flush_interval -1
-			transport http {
-				read_timeout 0
-				write_timeout 0
-			}
+(api_proxy) {
+	reverse_proxy api:3010 {
+		flush_interval -1
+		transport http {
+			read_timeout 0
+			write_timeout 0
 		}
+	}
+}
+
+api.nuvi.lat {
+	# gzip buffers `text/event-stream` on Caddy 2.8 (encode waits for minimum_length
+	# and does not flush compression frames per event). The calendar would only catch
+	# WhatsApp bookings after a full reload.
+	handle /api/v1/events* {
+		import api_proxy
 	}
 
 	handle {
-		reverse_proxy api:3010 {
-			flush_interval -1
-			transport http {
-				read_timeout 0
-				write_timeout 0
-			}
-		}
+		encode gzip
+		import api_proxy
 	}
 }

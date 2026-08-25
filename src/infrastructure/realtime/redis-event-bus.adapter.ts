@@ -40,9 +40,7 @@ export class RedisEventBusAdapter implements EventBusPort, OnModuleInit {
       this.dispatch(payload);
     });
 
-    // Subscribing on `ready` rather than at boot keeps this correct while the client is still
-    // connecting, and covers reconnections after Redis restarts.
-    this.subscriber.on('ready', () => {
+    const subscribe = (): void => {
       this.subscriber.subscribe(...channels).catch((error: unknown) => {
         this.logger.error(
           'Could not subscribe to the realtime channels',
@@ -50,7 +48,14 @@ export class RedisEventBusAdapter implements EventBusPort, OnModuleInit {
           CONTEXT,
         );
       });
-    });
+    };
+
+    // Subscribe on every `ready` so a Redis restart re-attaches the channels. Also subscribe
+    // immediately when the client is already ready: Compose waits for Redis before the API
+    // starts, so the first `ready` often fires during DI — before this hook — and waiting
+    // only for the event would leave the process publishing into empty channels.
+    this.subscriber.on('ready', subscribe);
+    if (this.subscriber.status === 'ready') subscribe();
   }
 
   async publish(event: RealtimeEvent): Promise<void> {
