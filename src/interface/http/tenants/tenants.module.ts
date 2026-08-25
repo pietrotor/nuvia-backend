@@ -18,5 +18,6 @@ import { TenantsController } from './tenants.controller';
     UpdateTenantUseCase,
     ChangeBusinessCategoryUseCase,
   ],
+  exports: [CreateTenantUseCase, ListTenantsUseCase],
 })
 export class TenantsModule {}
