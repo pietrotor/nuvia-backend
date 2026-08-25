@@ -40,6 +40,7 @@ export class UpdateServiceUseCase {
     await this.depositQrAssignment.assertAssignable({
       depositQrId: dto.depositQrId,
       requiresDeposit: dto.requiresDeposit ?? current.requiresDeposit,
+      branchId: null,
     });
 
     const data = this.normalize(dto);

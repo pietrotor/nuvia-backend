@@ -12,6 +12,8 @@ import {
 export interface DepositQrAssignment {
   depositQrId?: string | null;
   requiresDeposit: boolean;
+  // Null means the tenant-wide service catalog; a value means a branch override.
+  branchId: string | null;
 }
 
 // Pointing a service at a specific QR is the exception, so both writing paths check
@@ -25,7 +27,7 @@ export class DepositQrAssignmentValidator {
   ) {}
 
   async assertAssignable(assignment: DepositQrAssignment): Promise<void> {
-    const { depositQrId, requiresDeposit } = assignment;
+    const { branchId, depositQrId, requiresDeposit } = assignment;
     if (!depositQrId) return;
 
     if (!requiresDeposit) throw new DepositQrNotAllowedForServiceError();
@@ -33,6 +35,12 @@ export class DepositQrAssignmentValidator {
     // The lookup is tenant scoped, so a QR of another business is a 404 and never a
     // hint that it exists.
     const depositQr = await this.depositQrRepository.findById(depositQrId);
-    if (!depositQr) throw new DepositQrNotFoundError(depositQrId);
+    const matchesScope =
+      depositQr &&
+      depositQr.isActive &&
+      (branchId
+        ? depositQr.branchId === null || depositQr.branchId === branchId
+        : depositQr.branchId === null);
+    if (!matchesScope) throw new DepositQrNotFoundError(depositQrId);
   }
 }

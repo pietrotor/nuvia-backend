@@ -11,6 +11,8 @@ export interface CreateDepositQrData {
 
 export interface FindDepositQrsOptions {
   includeArchived?: boolean;
+  // Undefined returns every scope; null returns tenant-wide QRs only.
+  branchId?: string | null;
 }
 
 export interface DepositQrRepository {
@@ -18,8 +20,8 @@ export interface DepositQrRepository {
   save(depositQr: DepositQr): Promise<DepositQr>;
   findById(id: string): Promise<DepositQr | null>;
   findAll(options?: FindDepositQrsOptions): Promise<DepositQr[]>;
-  // Demoting the previous default and promoting this one is a single transaction: the
-  // database allows at most one default per tenant, so two writes could not both land.
+  // Demoting the previous default and promoting this one is a single transaction.
+  // The database allows one active default per branch plus one tenant-wide default.
   promoteToDefault(id: string): Promise<DepositQr | null>;
   assignBranchToAllWithoutBranch(branchId: string): Promise<number>;
   deleteAllUnscoped(): Promise<void>;

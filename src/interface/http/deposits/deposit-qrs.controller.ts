@@ -79,6 +79,12 @@ export class DepositQrsController {
       required: ['label', 'file'],
       properties: {
         label: { type: 'string', example: 'BNB principal' },
+        branchId: {
+          type: 'string',
+          format: 'uuid',
+          description:
+            'Branch scope; omit it to create a tenant-wide fallback QR',
+        },
         file: { type: 'string', format: 'binary' },
       },
     },

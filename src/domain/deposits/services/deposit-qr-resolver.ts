@@ -24,8 +24,15 @@ export function resolveDepositQr(
       (depositQr) => depositQr.id === serviceDepositQrId,
     );
     // An archived assignment falls back instead of failing: the business still has a
-    // way to charge, and the stale pointer is a configuration detail.
-    if (assigned) return assigned;
+    // way to charge, and the stale pointer is a configuration detail. A stale
+    // cross-branch assignment is handled the same way so it cannot charge to the
+    // wrong account.
+    if (
+      assigned &&
+      (assigned.branchId === null || assigned.branchId === branchId)
+    ) {
+      return assigned;
+    }
   }
 
   if (branchId) {

@@ -54,6 +54,7 @@ export class CreateServiceUseCase {
     await this.depositQrAssignment.assertAssignable({
       depositQrId,
       requiresDeposit,
+      branchId: null,
     });
 
     const currency = dto.currency ?? (await this.businessCurrency());

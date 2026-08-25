@@ -409,21 +409,93 @@ describe('Multi-tenancy (e2e)', () => {
   });
 
   it('keeps the payment QRs of one business out of the other', async () => {
-    const uploadQr = (token: string, label: string) =>
-      request(app.getHttpServer())
+    const uploadQr = (token: string, label: string, branchId?: string) => {
+      const upload = request(app.getHttpServer())
         .post('/api/v1/deposit-qrs')
         .set('Authorization', `Bearer ${token}`)
-        .field('label', label)
-        .attach('file', PNG_BYTES, {
-          filename: 'qr.png',
-          contentType: 'image/png',
-        });
+        .field('label', label);
+      if (branchId) upload.field('branchId', branchId);
+      return upload.attach('file', PNG_BYTES, {
+        filename: 'qr.png',
+        contentType: 'image/png',
+      });
+    };
 
     const glowQr = await uploadQr(ritmoOwner, 'BNB Glow').expect(201);
     await uploadQr(pasitosOwner, 'Union Luna').expect(201);
 
     // The first QR of a business is its default: a single-QR business configures nothing.
     expect(glowQr.body.isDefault).toBe(true);
+    expect(glowQr.body.branchId).toBeNull();
+
+    const glowBranches = await request(app.getHttpServer())
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    const lunaBranches = await request(app.getHttpServer())
+      .get('/api/v1/branches')
+      .set('Authorization', `Bearer ${pasitosOwner}`)
+      .expect(200);
+    const glowBranchId = glowBranches.body[0].id;
+    const foreignBranchId = lunaBranches.body[0].id;
+
+    const branchQr = await uploadQr(
+      ritmoOwner,
+      'BNB Glow sucursal',
+      glowBranchId,
+    ).expect(201);
+    expect(branchQr.body).toEqual(
+      expect.objectContaining({
+        branchId: glowBranchId,
+        isDefault: true,
+      }),
+    );
+
+    const filtered = await request(app.getHttpServer())
+      .get(`/api/v1/deposit-qrs?branchId=${glowBranchId}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(filtered.body.map((qr: { id: string }) => qr.id)).toEqual([
+      branchQr.body.id,
+    ]);
+
+    const foreignBranch = await uploadQr(
+      ritmoOwner,
+      'Sucursal ajena',
+      foreignBranchId,
+    ).expect(404);
+    expect(foreignBranch.body.code).toBe(ErrorCode.BRANCH_NOT_FOUND);
+
+    const secondBranchQr = await uploadQr(
+      ritmoOwner,
+      'Mercantil Glow sucursal',
+      glowBranchId,
+    ).expect(201);
+    expect(secondBranchQr.body.isDefault).toBe(false);
+
+    await request(app.getHttpServer())
+      .patch(`/api/v1/deposit-qrs/${secondBranchQr.body.id}`)
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .send({ isDefault: true })
+      .expect(200);
+
+    const glowCatalog = await request(app.getHttpServer())
+      .get('/api/v1/deposit-qrs')
+      .set('Authorization', `Bearer ${ritmoOwner}`)
+      .expect(200);
+    expect(
+      glowCatalog.body.find((qr: { id: string }) => qr.id === glowQr.body.id)
+        .isDefault,
+    ).toBe(true);
+    expect(
+      glowCatalog.body.find((qr: { id: string }) => qr.id === branchQr.body.id)
+        .isDefault,
+    ).toBe(false);
+    expect(
+      glowCatalog.body.find(
+        (qr: { id: string }) => qr.id === secondBranchQr.body.id,
+      ).isDefault,
+    ).toBe(true);
 
     const lunaList = await request(app.getHttpServer())
       .get('/api/v1/deposit-qrs')

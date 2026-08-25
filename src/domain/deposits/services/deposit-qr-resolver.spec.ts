@@ -43,6 +43,23 @@ describe('resolveDepositQr', () => {
     expect(resolved).toBe(main);
   });
 
+  it('falls back instead of using an assignment from another branch', () => {
+    const branchDefault = depositQr('branch-default', {
+      isDefault: true,
+      branchId: 'b1',
+    });
+    const resolved = resolveDepositQr({
+      serviceDepositQrId: 'wrong-branch',
+      branchId: 'b1',
+      activeDepositQrs: [
+        depositQr('wrong-branch', { branchId: 'b2' }),
+        branchDefault,
+      ],
+    });
+
+    expect(resolved).toBe(branchDefault);
+  });
+
   it('prefers the branch default over a tenant-wide default', () => {
     const branchDefault = depositQr('branch', {
       isDefault: true,

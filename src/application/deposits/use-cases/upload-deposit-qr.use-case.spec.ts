@@ -1,4 +1,7 @@
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
+import { Branch } from '@domain/branches/entities/branch.entity';
+import { BranchNotFoundError } from '@domain/branches/exceptions/branch.exceptions';
+import { BranchRepository } from '@domain/branches/repositories/branch.repository';
 import { DepositQr } from '@domain/deposits/entities/deposit-qr.entity';
 import { InvalidDepositQrFileError } from '@domain/deposits/exceptions/deposit-qr.exceptions';
 import {
@@ -14,6 +17,7 @@ describe('UploadDepositQrUseCase', () => {
   let depositQrRepository: jest.Mocked<
     Pick<DepositQrRepository, 'findAll' | 'create'>
   >;
+  let branchRepository: jest.Mocked<Pick<BranchRepository, 'findById'>>;
   let storage: jest.Mocked<Pick<ObjectStoragePort, 'store'>>;
   let useCase: UploadDepositQrUseCase;
 
@@ -36,6 +40,7 @@ describe('UploadDepositQrUseCase', () => {
           new DepositQr({
             id: 'qr1',
             tenantId: 't1',
+            branchId: data.branchId,
             label: data.label,
             storageKey: data.storageKey,
             mimeType: data.mimeType,
@@ -45,6 +50,12 @@ describe('UploadDepositQrUseCase', () => {
           }),
         ),
       ),
+    };
+    branchRepository = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'b1',
+        tenantId: 't1',
+      } as Branch),
     };
     storage = {
       store: jest.fn((input) =>
@@ -60,6 +71,7 @@ describe('UploadDepositQrUseCase', () => {
 
     useCase = new UploadDepositQrUseCase(
       depositQrRepository as unknown as DepositQrRepository,
+      branchRepository as unknown as BranchRepository,
       storage as unknown as ObjectStoragePort,
       tenantContext as unknown as TenantContextPort,
       audit as unknown as AuditRecorder,
@@ -90,6 +102,32 @@ describe('UploadDepositQrUseCase', () => {
     const created = await useCase.execute({ label: 'BNB' }, image);
 
     expect(created.isDefault).toBe(false);
+  });
+
+  it('makes the first QR in a branch its default independently', async () => {
+    const created = await useCase.execute(
+      { label: 'BNB Norte', branchId: 'b1' },
+      image,
+    );
+
+    expect(branchRepository.findById).toHaveBeenCalledWith('b1');
+    expect(depositQrRepository.findAll).toHaveBeenCalledWith({
+      branchId: 'b1',
+    });
+    expect(depositQrRepository.create).toHaveBeenCalledWith(
+      expect.objectContaining({ branchId: 'b1', isDefault: true }),
+    );
+    expect(created.branchId).toBe('b1');
+  });
+
+  it('treats an unknown or foreign branch as missing', async () => {
+    branchRepository.findById.mockResolvedValue(null);
+
+    await expect(
+      useCase.execute({ label: 'Ajeno', branchId: 'foreign' }, image),
+    ).rejects.toBeInstanceOf(BranchNotFoundError);
+    expect(storage.store).not.toHaveBeenCalled();
+    expect(depositQrRepository.create).not.toHaveBeenCalled();
   });
 
   it('stores the image under the tenant of the caller', async () => {

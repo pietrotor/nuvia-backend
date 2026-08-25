@@ -48,6 +48,7 @@ export class OfferServiceAtBranchUseCase {
     await this.depositQrAssignment.assertAssignable({
       depositQrId: dto.depositQrId,
       requiresDeposit: service.requiresDeposit,
+      branchId,
     });
 
     const offered = await this.branchServiceRepository.upsert({

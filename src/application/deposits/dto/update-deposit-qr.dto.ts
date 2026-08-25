@@ -17,7 +17,8 @@ export class UpdateDepositQrDto {
 
   @ApiProperty({
     required: false,
-    description: 'Makes this the QR used by every service without its own',
+    description:
+      'Makes this the default QR within its tenant-wide or branch scope',
   })
   @IsOptional()
   @IsBoolean()

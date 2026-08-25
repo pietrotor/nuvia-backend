@@ -36,12 +36,16 @@ describe('DepositQrAssignmentValidator', () => {
       validator.assertAssignable({
         depositQrId: 'qr1',
         requiresDeposit: true,
+        branchId: null,
       }),
     ).resolves.toBeUndefined();
   });
 
   it('does not look anything up when no QR is assigned', async () => {
-    await validator.assertAssignable({ requiresDeposit: false });
+    await validator.assertAssignable({
+      requiresDeposit: false,
+      branchId: null,
+    });
 
     expect(depositQrRepository.findById).not.toHaveBeenCalled();
   });
@@ -51,6 +55,7 @@ describe('DepositQrAssignmentValidator', () => {
       validator.assertAssignable({
         depositQrId: 'qr1',
         requiresDeposit: false,
+        branchId: null,
       }),
     ).rejects.toBeInstanceOf(DepositQrNotAllowedForServiceError);
   });
@@ -62,6 +67,65 @@ describe('DepositQrAssignmentValidator', () => {
       validator.assertAssignable({
         depositQrId: 'foreign',
         requiresDeposit: true,
+        branchId: null,
+      }),
+    ).rejects.toBeInstanceOf(DepositQrNotFoundError);
+  });
+
+  it('accepts a tenant-wide QR for a branch service', async () => {
+    await expect(
+      validator.assertAssignable({
+        depositQrId: 'qr1',
+        requiresDeposit: true,
+        branchId: 'b1',
+      }),
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects a branch QR on the tenant-wide service catalog', async () => {
+    depositQrRepository.findById.mockResolvedValue(
+      new DepositQr({
+        id: 'qr1',
+        tenantId: 't1',
+        branchId: 'b1',
+        label: 'Sucursal',
+        storageKey: 'tenants/t1/deposit-qrs/qr1.png',
+        mimeType: 'image/png',
+        sizeBytes: 100,
+        isDefault: true,
+        isActive: true,
+      }),
+    );
+
+    await expect(
+      validator.assertAssignable({
+        depositQrId: 'qr1',
+        requiresDeposit: true,
+        branchId: null,
+      }),
+    ).rejects.toBeInstanceOf(DepositQrNotFoundError);
+  });
+
+  it('rejects an archived or cross-branch QR', async () => {
+    depositQrRepository.findById.mockResolvedValue(
+      new DepositQr({
+        id: 'qr1',
+        tenantId: 't1',
+        branchId: 'b2',
+        label: 'Otra sucursal',
+        storageKey: 'tenants/t1/deposit-qrs/qr1.png',
+        mimeType: 'image/png',
+        sizeBytes: 100,
+        isDefault: false,
+        isActive: false,
+      }),
+    );
+
+    await expect(
+      validator.assertAssignable({
+        depositQrId: 'qr1',
+        requiresDeposit: true,
+        branchId: 'b1',
       }),
     ).rejects.toBeInstanceOf(DepositQrNotFoundError);
   });

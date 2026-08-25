@@ -6,6 +6,12 @@ export class DepositQrResponseDto {
   @ApiProperty()
   id: string;
 
+  @ApiProperty({
+    nullable: true,
+    description: 'Branch scope; null means this QR is tenant-wide',
+  })
+  branchId: string | null;
+
   @ApiProperty()
   label: string;
 
@@ -16,7 +22,8 @@ export class DepositQrResponseDto {
   sizeBytes: number;
 
   @ApiProperty({
-    description: 'Used by every service that does not point to its own QR',
+    description:
+      'Used by default within this QR scope when no service override applies',
   })
   isDefault: boolean;
 
@@ -28,6 +35,7 @@ export class DepositQrResponseDto {
   static from(depositQr: DepositQr): DepositQrResponseDto {
     return {
       id: depositQr.id,
+      branchId: depositQr.branchId,
       label: depositQr.label,
       mimeType: depositQr.mimeType,
       sizeBytes: depositQr.sizeBytes,

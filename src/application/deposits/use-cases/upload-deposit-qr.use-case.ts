@@ -4,6 +4,11 @@ import { Inject, Injectable } from '@nestjs/common';
 
 import { AuditRecorder } from '@application/audit/services/audit-recorder.service';
 import { AuditAction } from '@domain/audit/entities/audit-log.entity';
+import { BranchNotFoundError } from '@domain/branches/exceptions/branch.exceptions';
+import {
+  BRANCH_REPOSITORY,
+  BranchRepository,
+} from '@domain/branches/repositories/branch.repository';
 import { TenantContextMissingError } from '@domain/common/exceptions';
 import { DepositQr } from '@domain/deposits/entities/deposit-qr.entity';
 import {
@@ -37,6 +42,8 @@ export class UploadDepositQrUseCase {
   constructor(
     @Inject(DEPOSIT_QR_REPOSITORY)
     private readonly depositQrRepository: DepositQrRepository,
+    @Inject(BRANCH_REPOSITORY)
+    private readonly branchRepository: BranchRepository,
     @Inject(OBJECT_STORAGE_PORT)
     private readonly storage: ObjectStoragePort,
     @Inject(TENANT_CONTEXT_PORT)
@@ -53,7 +60,13 @@ export class UploadDepositQrUseCase {
       body: image.body,
     });
 
-    const existing = await this.depositQrRepository.findAll();
+    const branchId = dto.branchId ?? null;
+    if (branchId) {
+      const branch = await this.branchRepository.findById(branchId);
+      if (!branch) throw new BranchNotFoundError(branchId);
+    }
+
+    const existing = await this.depositQrRepository.findAll({ branchId });
     const storageKey = this.storageKeyFor(image.mimeType);
 
     await this.storage.store({
@@ -63,6 +76,7 @@ export class UploadDepositQrUseCase {
     });
 
     const created = await this.depositQrRepository.create({
+      branchId,
       label: dto.label.trim(),
       storageKey,
       mimeType: image.mimeType,
@@ -77,6 +91,7 @@ export class UploadDepositQrUseCase {
       entityId: created.id,
       after: {
         label: created.label,
+        branchId: created.branchId,
         storageKey: created.storageKey,
         isDefault: created.isDefault,
       },

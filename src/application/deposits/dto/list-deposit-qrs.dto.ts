@@ -1,8 +1,17 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
-import { IsBoolean, IsOptional } from 'class-validator';
+import { IsBoolean, IsOptional, IsUUID } from 'class-validator';
 
 export class ListDepositQrsDto {
+  @ApiPropertyOptional({
+    format: 'uuid',
+    description:
+      'Return only QRs assigned to this branch; omit it to return all scopes',
+  })
+  @IsOptional()
+  @IsUUID()
+  branchId?: string;
+
   @ApiPropertyOptional({
     default: false,
     description: 'Include the QRs the owner archived',

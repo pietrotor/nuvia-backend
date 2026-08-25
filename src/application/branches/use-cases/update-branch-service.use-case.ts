@@ -60,6 +60,7 @@ export class UpdateBranchServiceUseCase {
       await this.depositQrAssignment.assertAssignable({
         depositQrId: dto.depositQrId,
         requiresDeposit: service.requiresDeposit,
+        branchId,
       });
     }
 

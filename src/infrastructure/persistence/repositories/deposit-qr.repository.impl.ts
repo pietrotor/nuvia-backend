@@ -66,14 +66,22 @@ export class DrizzleDepositQrRepository
   }
 
   async findAll(options?: FindDepositQrsOptions): Promise<DepositQr[]> {
+    const filters = [];
+    if (!options?.includeArchived) {
+      filters.push(eq(depositQrs.isActive, true));
+    }
+    if (options && Object.prototype.hasOwnProperty.call(options, 'branchId')) {
+      filters.push(
+        options.branchId === null || options.branchId === undefined
+          ? isNull(depositQrs.branchId)
+          : eq(depositQrs.branchId, options.branchId),
+      );
+    }
+
     const rows = await this.drizzle.db
       .select()
       .from(depositQrs)
-      .where(
-        options?.includeArchived
-          ? this.scope(depositQrs)
-          : this.scope(depositQrs, eq(depositQrs.isActive, true)),
-      )
+      .where(this.scope(depositQrs, ...filters))
       .orderBy(asc(depositQrs.createdAt));
 
     return rows.map(DepositQrMapper.toDomain);
@@ -84,14 +92,26 @@ export class DrizzleDepositQrRepository
 
     try {
       return await this.drizzle.db.transaction(async (tx) => {
-        // Demote first: the partial unique index allows a single default per
-        // tenant, so promoting before demoting would violate it.
+        const [target] = await tx
+          .select()
+          .from(depositQrs)
+          .where(and(eq(depositQrs.tenantId, tenantId), eq(depositQrs.id, id)));
+        if (!target) return null;
+
+        const sameScope =
+          target.branchId === null
+            ? isNull(depositQrs.branchId)
+            : eq(depositQrs.branchId, target.branchId);
+
+        // Demote first: each partial unique index allows a single active default
+        // within the target's branch or tenant-wide scope.
         await tx
           .update(depositQrs)
           .set({ isDefault: false })
           .where(
             and(
               eq(depositQrs.tenantId, tenantId),
+              sameScope,
               eq(depositQrs.isDefault, true),
               ne(depositQrs.id, id),
             ),
