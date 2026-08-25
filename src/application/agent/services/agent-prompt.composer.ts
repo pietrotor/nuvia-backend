@@ -390,6 +390,7 @@ export class AgentPromptComposer {
     timezone: string,
   ): ClientStateAppointment {
     return {
+      appointmentId: view.appointment.id,
       service: view.service.name,
       professional: view.professional.name,
       whenLabel: this.formatDateTime(

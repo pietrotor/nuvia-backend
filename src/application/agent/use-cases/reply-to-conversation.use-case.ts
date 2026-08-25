@@ -64,6 +64,8 @@ const SUBSCRIPTION_HANDOFF_REASON = 'subscription_limit';
 
 const LLM_HANDOFF_REASON = 'llm_provider_error';
 
+const DEPOSIT_QR_HANDOFF_REASON = 'deposit_qr_unsent';
+
 export interface ReplyToConversationInput {
   tenantId: string;
   conversationId: string;
@@ -247,7 +249,9 @@ export class ReplyToConversationUseCase {
     for (const followUp of answer.followUps) {
       await this.sendFollowUp(followUp, {
         conversationId: conversation.id,
-        clientPhoneE164: input.clientPhoneE164,
+        input,
+        waitingSince,
+        slowdown,
       });
     }
   }
@@ -485,24 +489,70 @@ export class ReplyToConversationUseCase {
   }
 
   // A failed follow-up must not fail the job: the reply already went out and is
-  // recorded, so a retry would find the inbound answered and skip everything. The
-  // client is left waiting for a QR, which is the owner's cue to send it by hand.
+  // recorded, so a retry would find the inbound answered and skip everything. The answer
+  // it went out with already promised the QR, so when the image does not follow the
+  // client is told, and a person takes over instead of the promise standing.
   private async sendFollowUp(
     followUp: AgentFollowUp,
-    target: { conversationId: string; clientPhoneE164: string },
+    params: {
+      conversationId: string;
+      input: ReplyToConversationInput;
+      waitingSince: Date;
+      slowdown: number;
+    },
   ): Promise<void> {
     try {
-      await this.sendDepositQr.execute({
+      const result = await this.sendDepositQr.execute({
         appointmentId: followUp.appointmentId,
-        conversationId: target.conversationId,
-        clientPhoneE164: target.clientPhoneE164,
+        conversationId: params.conversationId,
+        clientPhoneE164: params.input.clientPhoneE164,
       });
+      if (result.outcome === 'sent') return;
+      this.warn(
+        `${followUp.kind} follow-up for appointment ${followUp.appointmentId}`,
+        result.outcome,
+      );
     } catch (error) {
       this.logger.error(
         `Could not send the ${followUp.kind} follow-up for appointment ${followUp.appointmentId}`,
         error instanceof Error ? error.stack : undefined,
         ReplyToConversationUseCase.name,
       );
+    }
+
+    await this.correctUnsentDepositQr(params);
+  }
+
+  // The QR was announced and never arrived. Correcting it costs one message; leaving it
+  // standing costs a client who waits for an image and a deposit nobody ever collects.
+  private async correctUnsentDepositQr(params: {
+    conversationId: string;
+    input: ReplyToConversationInput;
+    waitingSince: Date;
+    slowdown: number;
+  }): Promise<void> {
+    try {
+      const paused = await this.conversations.setHandoff(
+        params.conversationId,
+        DEPOSIT_QR_HANDOFF_REASON,
+      );
+      await this.handoffLabel.markAttention(paused);
+      await this.audit.record({
+        action: AuditAction.CONVERSATION_BOT_PAUSED,
+        entity: 'conversation',
+        entityId: params.conversationId,
+        after: { reason: DEPOSIT_QR_HANDOFF_REASON },
+      });
+      await this.send({
+        conversationId: params.conversationId,
+        input: params.input,
+        text: AgentOutboundCopy.unverifiedDepositQr,
+        waitingSince: params.waitingSince,
+        slowdown: params.slowdown,
+        inReplyTo: null,
+      });
+    } catch (error) {
+      this.warn('correction for the deposit QR that never went out', error);
     }
   }
 

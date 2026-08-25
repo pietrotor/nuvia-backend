@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 
 import { SendDepositQrUseCase } from '@application/deposits/use-cases/send-deposit-qr.use-case';
+import { AppointmentNotFoundError } from '@domain/appointments/exceptions/appointment.exceptions';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
 import { asObject, requiredUuid } from './tool-input';
 
@@ -17,7 +18,8 @@ export class ResendDepositQrAgentTool implements AgentTool {
       properties: {
         appointmentId: {
           type: 'string',
-          description: 'Id de la cita, obtenido de list_my_appointments',
+          description:
+            'Id de la cita, tomado del bloque de agenda o de list_my_appointments. No es el id del servicio.',
         },
       },
     },
@@ -32,11 +34,29 @@ export class ResendDepositQrAgentTool implements AgentTool {
     context: AgentContext,
   ): Promise<AgentToolResult> {
     const values = asObject(input);
-    const result = await this.sendDepositQr.execute({
-      appointmentId: requiredUuid(values, 'appointmentId'),
-      conversationId: context.conversationId,
-      clientPhoneE164: context.clientPhoneE164,
-    });
+
+    let appointmentId: string;
+    try {
+      appointmentId = requiredUuid(values, 'appointmentId');
+    } catch {
+      return this.unknownAppointment();
+    }
+
+    let result: Awaited<ReturnType<SendDepositQrUseCase['execute']>>;
+    try {
+      result = await this.sendDepositQr.execute({
+        appointmentId,
+        conversationId: context.conversationId,
+        clientPhoneE164: context.clientPhoneE164,
+      });
+    } catch (error) {
+      // Without this the model reads a generic failure and concludes the resend is not
+      // allowed, so it hands off instead of retrying with the id of a real appointment.
+      if (error instanceof AppointmentNotFoundError) {
+        return this.unknownAppointment();
+      }
+      throw error;
+    }
 
     switch (result.outcome) {
       case 'sent':
@@ -71,5 +91,17 @@ export class ResendDepositQrAgentTool implements AgentTool {
           ],
         };
     }
+  }
+
+  private unknownAppointment(): AgentToolResult {
+    return {
+      status: 'warning',
+      summary:
+        'No se envió nada: ese id no es de ninguna cita. El id de un servicio, de una profesional o de una sucursal no sirve acá.',
+      nextActions: [
+        'Copiar el id de la cita del bloque de agenda o de list_my_appointments y reintentar una sola vez.',
+        'No decir que el QR salió: no salió.',
+      ],
+    };
   }
 }

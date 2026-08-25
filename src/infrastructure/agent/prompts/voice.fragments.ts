@@ -134,6 +134,7 @@ export const VOLATILE_FRAGMENTS: PromptFragment[] = [
     lines: [
       'Estado real de esta {{client}} en la agenda, ahora mismo: {{clientState}}',
       'Esa lista es lo único que existe. Si un mensaje anterior de esta conversación da por hecha una reserva que no figura ahí, ese mensaje fue un error tuyo: corregilo con honestidad en lugar de repetirlo.',
+      'El id de cada línea es el de la cita: es el único válido para las herramientas que reciben un appointmentId. No uses el id de un servicio, de una profesional ni de una sucursal en su lugar.',
     ],
   },
 ];

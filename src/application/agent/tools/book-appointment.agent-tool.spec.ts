@@ -44,6 +44,7 @@ describe('BookAppointmentAgentTool', () => {
   let resolveAttendee: { execute: jest.Mock };
   let getAppointment: { execute: jest.Mock };
   let getBranch: { execute: jest.Mock };
+  let depositQrs: { findAll: jest.Mock };
   let tool: BookAppointmentAgentTool;
 
   beforeEach(() => {
@@ -64,11 +65,13 @@ describe('BookAppointmentAgentTool', () => {
         mapsUrl: 'https://maps.example/branch-1',
       }),
     };
+    depositQrs = { findAll: jest.fn().mockResolvedValue([{ id: 'qr1' }]) };
     tool = new BookAppointmentAgentTool(
       bookAppointment as unknown as BookAppointmentUseCase,
       resolveAttendee as unknown as ResolveBookingAttendeeUseCase,
       getAppointment as unknown as GetAppointmentUseCase,
       getBranch as unknown as GetBranchUseCase,
+      depositQrs as never,
     );
   });
 
@@ -173,5 +176,46 @@ describe('BookAppointmentAgentTool', () => {
         startsAtLabel: '19:00',
       }),
     );
+  });
+
+  // The follow-up runs after the answer is already sent, so a business with no QR left
+  // the client holding a promise of an image that could never arrive.
+  it('promises no QR when the business has none to charge with', async () => {
+    depositQrs.findAll.mockResolvedValue([]);
+    bookAppointment.execute.mockResolvedValue({
+      id: 'appointment-1',
+      branchId: 'branch-1',
+      bookingContactClientId: CLIENT_ID,
+      startsAt: new Date('2026-08-09T23:00:00.000Z'),
+      endsAt: new Date('2026-08-10T00:15:00.000Z'),
+      status: AppointmentStatus.PENDING_DEPOSIT,
+    });
+
+    const result = await tool.execute(validInput, context);
+
+    expect(result.status).toBe('success');
+    expect(result.followUp).toBeUndefined();
+    expect(result.nextActions).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining('No prometer ningún QR'),
+        expect.stringContaining('request_handoff'),
+      ]),
+    );
+  });
+
+  it('does not look for a QR when the service charges no deposit', async () => {
+    bookAppointment.execute.mockResolvedValue({
+      id: 'appointment-1',
+      branchId: 'branch-1',
+      bookingContactClientId: CLIENT_ID,
+      startsAt: new Date('2026-08-09T23:00:00.000Z'),
+      endsAt: new Date('2026-08-10T00:15:00.000Z'),
+      status: AppointmentStatus.CONFIRMED,
+    });
+
+    const result = await tool.execute(validInput, context);
+
+    expect(result.followUp).toBeUndefined();
+    expect(depositQrs.findAll).not.toHaveBeenCalled();
   });
 });

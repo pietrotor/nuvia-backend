@@ -284,6 +284,7 @@ describe('AgentPromptComposer', () => {
       listClientAppointments.execute.mockResolvedValue([
         {
           appointment: {
+            id: 'appointment-1',
             startsAt: new Date('2026-08-09T20:00:00.000Z'),
             status: AppointmentStatus.PENDING_DEPOSIT,
           },
@@ -300,6 +301,29 @@ describe('AgentPromptComposer', () => {
       expect(volatileText).toContain('Hidrafacial con Camila Rojas');
       expect(volatileText).toContain('16:00');
       expect(volatileText).toContain('esperando la seña');
+    });
+
+    // Without the id in this block the model reaches a resend with no appointment id in
+    // context and passes the service id from the catalog instead.
+    it('carries the appointment id the tools need', async () => {
+      listClientAppointments.execute.mockResolvedValue([
+        {
+          appointment: {
+            id: 'e6f4d5c8-1b2a-4c3d-9e8f-7a6b5c4d3e2f',
+            startsAt: new Date('2026-08-09T20:00:00.000Z'),
+            status: AppointmentStatus.PENDING_DEPOSIT,
+          },
+          professional: { name: 'Camila Rojas' },
+          service: { name: 'Hidrafacial' },
+        },
+      ]);
+
+      const { volatileText } = await composer.compose({
+        ...input,
+        config: buildConfig(),
+      });
+
+      expect(volatileText).toContain('id e6f4d5c8-1b2a-4c3d-9e8f-7a6b5c4d3e2f');
     });
   });
 

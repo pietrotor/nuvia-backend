@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Inject, Injectable } from '@nestjs/common';
 import { DateTime } from 'luxon';
 
 import { BookAppointmentUseCase } from '@application/appointments/use-cases/book-appointment.use-case';
@@ -22,6 +22,10 @@ import {
   ProfessionalNotAtBranchError,
   ServiceNotOfferedAtBranchError,
 } from '@domain/branches/exceptions/branch.exceptions';
+import {
+  DEPOSIT_QR_REPOSITORY,
+  DepositQrRepository,
+} from '@domain/deposits/repositories/deposit-qr.repository';
 import { ProfessionalNotFoundError } from '@domain/professionals/exceptions/professional.exceptions';
 import { ServiceNotFoundError } from '@domain/services/exceptions/service.exceptions';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
@@ -109,6 +113,8 @@ export class BookAppointmentAgentTool implements AgentTool {
     private readonly resolveAttendee: ResolveBookingAttendeeUseCase,
     private readonly getAppointment: GetAppointmentUseCase,
     private readonly getBranch: GetBranchUseCase,
+    @Inject(DEPOSIT_QR_REPOSITORY)
+    private readonly depositQrs: DepositQrRepository,
   ) {}
 
   async execute(
@@ -201,9 +207,10 @@ export class BookAppointmentAgentTool implements AgentTool {
 
     const awaitsDeposit =
       appointment.status === AppointmentStatus.PENDING_DEPOSIT;
-    const [view, branch] = await Promise.all([
+    const [view, branch, chargeable] = await Promise.all([
       this.getAppointment.execute(appointment.id),
       this.getBranch.execute(appointment.branchId),
+      awaitsDeposit ? this.canChargeADeposit() : Promise.resolve(false),
     ]);
     const startsAtLabel = clockLabel(appointment.startsAt, context.timezone);
     const dateLabel = DateTime.fromJSDate(appointment.startsAt)
@@ -244,20 +251,36 @@ export class BookAppointmentAgentTool implements AgentTool {
         status: appointment.status,
       },
       nextActions: awaitsDeposit
-        ? [
-            'No repetir la checklist previa. Abrir con el resultado y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
-            'Usar solamente los datos devueltos por esta herramienta y avisar que el QR de la seña llega en el siguiente mensaje.',
-            'No calcular ni mencionar el monto de la seña: va en el mensaje del QR.',
-          ]
+        ? chargeable
+          ? [
+              'No repetir la checklist previa. Abrir con el resultado y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
+              'Usar solamente los datos devueltos por esta herramienta y avisar que el QR de la seña llega en el siguiente mensaje.',
+              'No calcular ni mencionar el monto de la seña: va en el mensaje del QR.',
+            ]
+          : [
+              'No repetir la checklist previa. Abrir con el resultado y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
+              'No prometer ningún QR: no va a salir ninguna imagen. Decir que el turno queda con la seña pendiente y que el equipo pasa los datos del pago.',
+              'Derivar con request_handoff para que una persona pase los datos del pago.',
+            ]
         : [
             'No repetir la checklist previa. Abrir diciendo que quedó confirmada y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
             'Usar solamente los datos devueltos por esta herramienta.',
             'No mencionar seña ni QR: este servicio no cobra anticipo y no va a salir ninguna imagen.',
           ],
-      followUp: awaitsDeposit
-        ? { kind: 'deposit_qr', appointmentId: appointment.id }
-        : undefined,
+      followUp:
+        awaitsDeposit && chargeable
+          ? { kind: 'deposit_qr', appointmentId: appointment.id }
+          : undefined,
     };
+  }
+
+  // The QR follow-up is sent after the answer is already out, so a business with nothing
+  // to charge with left the client holding a promise of an image that never came. Which
+  // of several QRs applies is still resolved at send time; this only asks whether any
+  // exists, because none means no send can ever succeed.
+  private async canChargeADeposit(): Promise<boolean> {
+    const depositQrs = await this.depositQrs.findAll();
+    return depositQrs.length > 0;
   }
 
   private explain(error: unknown): string | null {
