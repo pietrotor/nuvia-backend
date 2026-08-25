@@ -8,7 +8,7 @@ export const DEPOSIT_QR_ALLOWED_MIME_TYPES = [
   'image/webp',
 ] as const;
 
-export const DEPOSIT_QR_MAX_SIZE_BYTES = 2 * 1024 * 1024;
+export const DEPOSIT_QR_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 
 export const DEPOSIT_QR_MAX_SIZE_MB = DEPOSIT_QR_MAX_SIZE_BYTES / (1024 * 1024);
 
