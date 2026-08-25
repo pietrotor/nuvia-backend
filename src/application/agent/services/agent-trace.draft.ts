@@ -131,6 +131,12 @@ export class AgentTraceDraft {
     nextActions?: string[];
     offerableTimes?: string[];
     followUp?: TracedFollowUp;
+    committedAction?: {
+      operation: string;
+      resourceType: string;
+      resourceId: string;
+      outcome: string;
+    };
     latencyMs: number;
     error?: string;
   }): void {
@@ -153,6 +159,7 @@ export class AgentTraceDraft {
       nextActions: input.nextActions,
       offerableTimes: input.offerableTimes,
       followUp: input.followUp,
+      committedAction: input.committedAction,
       latencyMs: input.latencyMs,
       error: input.error,
       truncated: dataTruncated || argsTruncated || undefined,
@@ -160,7 +167,7 @@ export class AgentTraceDraft {
   }
 
   recordGuard(input: {
-    guard: 'claims' | 'offered_times';
+    guard: 'claims' | 'offered_times' | 'incomplete_answer';
     detected: string[];
     action: 'retry' | 'handoff';
   }): void {

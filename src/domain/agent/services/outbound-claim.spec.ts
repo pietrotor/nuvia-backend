@@ -1,9 +1,16 @@
+import { AgentActionEvidence } from './agent-action';
 import {
   DEPOSIT_QR_QUEUED,
   detectOutboundClaims,
   OutboundClaim,
   unsupportedClaims,
 } from './outbound-claim';
+
+function evidence(
+  ...operations: AgentActionEvidence['operation'][]
+): AgentActionEvidence[] {
+  return operations.map((operation) => ({ operation }));
+}
 
 describe('outbound claims', () => {
   describe('booking', () => {
@@ -29,6 +36,98 @@ describe('outbound claims', () => {
       'Este tratamiento requiere seña al reservar.',
     ])('does not flag "%s"', (text) => {
       expect(detectOutboundClaims(text)).not.toContain(OutboundClaim.BOOKING);
+    });
+  });
+
+  describe('cancellation', () => {
+    it.each([
+      'Listo, cancelamos tu reserva del masaje del miércoles 26 a las 17:00.',
+      'Listo, ahora sí. Tu cita del masaje del miércoles 26 a las 17:00 quedó cancelada.',
+      'Ya cancelé tu cita.',
+      'Tu turno quedó cancelado.',
+      'La cita ya está cancelada.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(OutboundClaim.CANCELLATION);
+    });
+
+    it.each([
+      '¿Confirmás que querés cancelarla?',
+      '¿Querés que cancele la cita?',
+      'Antes de cancelar, ¿hay algún motivo?',
+    ])('does not flag "%s"', (text) => {
+      expect(detectOutboundClaims(text)).not.toContain(
+        OutboundClaim.CANCELLATION,
+      );
+    });
+  });
+
+  describe('reschedule', () => {
+    it.each([
+      'Listo, te reagendé para el jueves a las 16:00.',
+      'Ya moví tu cita al viernes.',
+      'Tu turno quedó reagendado.',
+      'Cambié tu horario al martes.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(OutboundClaim.RESCHEDULE);
+    });
+
+    it.each([
+      '¿Querés que te reagende para otro día?',
+      '¿Confirmás el nuevo horario para reagendar?',
+    ])('does not flag "%s"', (text) => {
+      expect(detectOutboundClaims(text)).not.toContain(
+        OutboundClaim.RESCHEDULE,
+      );
+    });
+  });
+
+  describe('handoff', () => {
+    it.each([
+      'Ya avisé al equipo para que te continúe.',
+      'Te derivé con una persona del equipo.',
+      'El equipo ya fue notificado.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(OutboundClaim.HANDOFF);
+    });
+
+    it('does not flag an offer to hand off', () => {
+      expect(
+        detectOutboundClaims('¿Querés que te derive con el equipo?'),
+      ).not.toContain(OutboundClaim.HANDOFF);
+    });
+  });
+
+  describe('client name', () => {
+    it.each([
+      'Ya guardé tu nombre como Ana.',
+      'Tu nombre quedó registrado.',
+      'Ya te tengo registrada.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(OutboundClaim.CLIENT_NAME);
+    });
+  });
+
+  describe('branch selection', () => {
+    it.each([
+      'Ya fijé la sucursal Centro.',
+      'Quedamos en la sucursal Casa Matriz.',
+      'La sucursal quedó elegida.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(
+        OutboundClaim.BRANCH_SELECTION,
+      );
+    });
+  });
+
+  describe('payment verified', () => {
+    it.each([
+      'Tu pago quedó confirmado.',
+      'Ya verifiqué tu seña.',
+      'El equipo ya verificó el pago.',
+    ])('flags "%s"', (text) => {
+      expect(detectOutboundClaims(text)).toContain(
+        OutboundClaim.PAYMENT_VERIFIED,
+      );
     });
   });
 
@@ -67,6 +166,16 @@ describe('outbound claims', () => {
     });
   });
 
+  describe('deposit receipt expectation', () => {
+    it('flags a future assignment promise', () => {
+      expect(
+        detectOutboundClaims(
+          'La próxima imagen la asignaré a tu cita del viernes.',
+        ),
+      ).toContain(OutboundClaim.DEPOSIT_RECEIPT_EXPECTATION);
+    });
+  });
+
   describe('evidence', () => {
     const answer = 'Listo, te agendo el turno. En un momento te llega el QR.';
 
@@ -79,26 +188,28 @@ describe('outbound claims', () => {
 
     it('accepts the booking but not the QR it never queued', () => {
       // A service that charges no deposit books fine and sends no image.
-      expect(unsupportedClaims(answer, ['book_appointment'])).toEqual([
+      expect(unsupportedClaims(answer, evidence('appointment.book'))).toEqual([
         OutboundClaim.DEPOSIT_QR,
       ]);
     });
 
     it('accepts the QR once the booking queued it', () => {
       expect(
-        unsupportedClaims(answer, ['book_appointment', DEPOSIT_QR_QUEUED]),
+        unsupportedClaims(
+          answer,
+          evidence('appointment.book', DEPOSIT_QR_QUEUED),
+        ),
       ).toEqual([]);
     });
 
     it('does not accept an unrelated tool as proof', () => {
-      expect(unsupportedClaims(answer, ['find_availability'])).toEqual([
-        OutboundClaim.BOOKING,
-        OutboundClaim.DEPOSIT_QR,
-      ]);
+      expect(
+        unsupportedClaims(answer, evidence('conversation.handoff')),
+      ).toEqual([OutboundClaim.BOOKING, OutboundClaim.DEPOSIT_QR]);
     });
 
     it('accepts a resend for the QR but still asks for the booking', () => {
-      expect(unsupportedClaims(answer, ['resend_deposit_qr'])).toEqual([
+      expect(unsupportedClaims(answer, evidence('deposit.qr_sent'))).toEqual([
         OutboundClaim.BOOKING,
       ]);
     });
@@ -115,9 +226,42 @@ describe('outbound claims', () => {
       expect(unsupportedClaims(correction, [])).toEqual([
         OutboundClaim.DEPOSIT_RECEIPT_ASSIGNMENT,
       ]);
-      expect(unsupportedClaims(correction, ['assign_deposit_receipt'])).toEqual(
-        [],
-      );
+      expect(
+        unsupportedClaims(correction, evidence('deposit.receipt_assigned')),
+      ).toEqual([]);
+    });
+
+    it('never accepts payment verification from the agent', () => {
+      expect(
+        unsupportedClaims(
+          'Tu pago quedó confirmado.',
+          evidence('appointment.book'),
+        ),
+      ).toEqual([OutboundClaim.PAYMENT_VERIFIED]);
+    });
+
+    it('requires cancel evidence for a cancellation claim', () => {
+      const cancelled =
+        'Listo, cancelamos tu reserva del masaje del miércoles 26 a las 17:00.';
+      expect(unsupportedClaims(cancelled, [])).toEqual([
+        OutboundClaim.CANCELLATION,
+      ]);
+      expect(
+        unsupportedClaims(cancelled, evidence('appointment.cancel')),
+      ).toEqual([]);
+      expect(
+        unsupportedClaims(cancelled, evidence('appointment.book')),
+      ).toEqual([OutboundClaim.CANCELLATION]);
+    });
+
+    it('keeps reschedule distinct from booking', () => {
+      const moved = 'Listo, te reagendé para el jueves a las 16:00.';
+      expect(unsupportedClaims(moved, evidence('appointment.book'))).toEqual([
+        OutboundClaim.RESCHEDULE,
+      ]);
+      expect(
+        unsupportedClaims(moved, evidence('appointment.reschedule')),
+      ).toEqual([]);
     });
   });
 });

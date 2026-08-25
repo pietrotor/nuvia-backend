@@ -74,6 +74,17 @@ export class SetBranchAgentTool implements AgentTool {
     return {
       status: 'success',
       summary: `Sucursal fijada: ${branch.name}.`,
+      committedAction: {
+        operation: 'conversation.branch_set',
+        resourceType: 'branch',
+        resourceId: branch.id,
+        outcome: 'committed',
+        facts: {
+          branchName: branch.name,
+          branchAddress: branch.address,
+          mapsUrl: branch.mapsUrl,
+        },
+      },
       data: {
         branchId: branch.id,
         name: branch.name,

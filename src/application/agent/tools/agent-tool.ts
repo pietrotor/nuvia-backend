@@ -1,4 +1,5 @@
 import { LlmToolDefinition } from '@domain/agent/ports/llm.port';
+import { AgentCommittedAction } from '@domain/agent/services/agent-action';
 
 export interface AgentContext {
   tenantId: string;
@@ -33,10 +34,16 @@ export interface AgentToolResult {
   data?: unknown;
   nextActions?: string[];
   followUp?: AgentFollowUp;
+  // Resource-bound proof of a mutation. Only present after the use case committed.
+  // Warnings and errors must never set this — a fluent summary is not evidence.
+  committedAction?: AgentCommittedAction;
   // Every clock time this result puts on the table, in any format the tool already uses
   // ("17:00", "09:00 a 18:00"). The answer is checked against them, so a tool that returns
   // times and stays quiet here is a tool whose times the agent will not be allowed to say.
   offerableTimes?: string[];
+  // When true, any clock time not in offerableTimes is invented — even if offerableTimes
+  // is empty (day/period choice must not name exact hours).
+  forbidsUnlistedClockTimes?: boolean;
 }
 
 export interface AgentTool {

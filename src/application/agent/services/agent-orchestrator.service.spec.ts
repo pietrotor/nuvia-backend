@@ -8,9 +8,11 @@ import {
 } from '@domain/conversations/entities/message.entity';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
 import { AgentTool } from '../tools/agent-tool';
+import { bookedAction, cancelledAction } from './agent-action.fixtures';
 import { AgentPromptComposer } from './agent-prompt.composer';
 import { AgentToolRegistry } from './agent-tool.registry';
 import { AgentOrchestrator } from './agent-orchestrator.service';
+import { renderActionConfirmation } from '../messages/action-confirmation';
 
 const context = {
   tenantId: 'tenant-id',
@@ -233,6 +235,12 @@ describe('AgentOrchestrator', () => {
       execute: jest.fn().mockResolvedValue({
         status: 'success',
         summary: 'Turno reservado, pendiente de seña.',
+        committedAction: bookedAction({
+          facts: {
+            ...bookedAction().facts,
+            awaitsDeposit: true,
+          },
+        }),
         followUp: { kind: 'deposit_qr', appointmentId: 'ap1' },
       }),
     };
@@ -246,6 +254,9 @@ describe('AgentOrchestrator', () => {
     expect(answer.followUps).toEqual([
       { kind: 'deposit_qr', appointmentId: 'ap1' },
     ]);
+    expect(answer.text).toContain('queda pendiente la seña');
+    expect(answer.text).toContain('Tu reserva quedó hecha');
+    expect(answer.text).toContain('En el siguiente mensaje te llega el QR');
     const toolMessage = llm.chat.mock.calls[1][0].messages.find(
       (message) => message.role === 'tool',
     );
@@ -283,9 +294,22 @@ describe('AgentOrchestrator', () => {
           }),
       };
       const book = stubTool('book_appointment', {
+        committedAction: bookedAction({
+          facts: {
+            ...bookedAction().facts,
+            awaitsDeposit: true,
+          },
+        }),
         followUp: { kind: 'deposit_qr', appointmentId: 'ap1' },
       });
-      const handoff = stubTool('request_handoff', {});
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
 
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
@@ -297,7 +321,17 @@ describe('AgentOrchestrator', () => {
       expect(llm.chat.mock.calls[1][0].toolChoice).toBe('any');
       expect(book.execute).toHaveBeenCalled();
       expect(handoff.execute).not.toHaveBeenCalled();
-      expect(answer.text).toBe('Listo, te agendo el turno.');
+      expect(answer.text).toBe(
+        renderActionConfirmation(
+          bookedAction({
+            facts: {
+              ...bookedAction().facts,
+              awaitsDeposit: true,
+            },
+          }),
+          { depositQrQueued: true },
+        ),
+      );
       expect(answer.followUps).toEqual([
         { kind: 'deposit_qr', appointmentId: 'ap1' },
       ]);
@@ -311,7 +345,14 @@ describe('AgentOrchestrator', () => {
           .mockResolvedValueOnce({ content: claim, toolCalls: [] }),
       };
       const book = stubTool('book_appointment', {});
-      const handoff = stubTool('request_handoff', {});
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
 
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
@@ -327,7 +368,7 @@ describe('AgentOrchestrator', () => {
       expect(answer.text).toBe(AgentOutboundCopy.unverifiedBooking);
     });
 
-    it('leaves an answer alone when the booking queued the QR', async () => {
+    it('replaces the model answer with the booking receipt when the QR was queued', async () => {
       const llm: jest.Mocked<LlmPort> = {
         chat: jest
           .fn()
@@ -339,7 +380,14 @@ describe('AgentOrchestrator', () => {
           })
           .mockResolvedValueOnce({ content: claim, toolCalls: [] }),
       };
+      const action = bookedAction({
+        facts: {
+          ...bookedAction().facts,
+          awaitsDeposit: true,
+        },
+      });
       const book = stubTool('book_appointment', {
+        committedAction: action,
         followUp: { kind: 'deposit_qr', appointmentId: 'ap1' },
       });
 
@@ -350,7 +398,9 @@ describe('AgentOrchestrator', () => {
       );
 
       expect(llm.chat).toHaveBeenCalledTimes(2);
-      expect(answer.text).toBe(claim);
+      expect(answer.text).toBe(
+        renderActionConfirmation(action, { depositQrQueued: true }),
+      );
     });
 
     // A service that charges no deposit books fine and queues no image, so announcing
@@ -371,8 +421,18 @@ describe('AgentOrchestrator', () => {
             toolCalls: [],
           }),
       };
-      const book = stubTool('book_appointment', {});
-      const handoff = stubTool('request_handoff', {});
+      const action = bookedAction();
+      const book = stubTool('book_appointment', {
+        committedAction: action,
+      });
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
 
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
@@ -383,9 +443,7 @@ describe('AgentOrchestrator', () => {
       expect(llm.chat).toHaveBeenCalledTimes(3);
       expect(llm.chat.mock.calls[2][0].toolChoice).toBe('any');
       expect(handoff.execute).not.toHaveBeenCalled();
-      expect(answer.text).toBe(
-        'Listo, te agendé. Este servicio no lleva seña.',
-      );
+      expect(answer.text).toBe(renderActionConfirmation(action));
       expect(answer.followUps).toEqual([]);
     });
 
@@ -402,8 +460,17 @@ describe('AgentOrchestrator', () => {
           .mockResolvedValueOnce({ content: claim, toolCalls: [] })
           .mockResolvedValueOnce({ content: claim, toolCalls: [] }),
       };
-      const book = stubTool('book_appointment', {});
-      const handoff = stubTool('request_handoff', {});
+      const book = stubTool('book_appointment', {
+        committedAction: bookedAction(),
+      });
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
 
       const answer = await buildOrchestrator(llm, book, handoff).respond(
         history,
@@ -416,6 +483,98 @@ describe('AgentOrchestrator', () => {
         expect.objectContaining({ conversationId: 'conversation-id' }),
       );
       expect(answer.text).toBe(AgentOutboundCopy.unverifiedDepositQr);
+    });
+
+    it('blocks a cancellation claim that never ran cancel_appointment', async () => {
+      const cancelClaim =
+        'Listo, cancelamos tu reserva del masaje del miércoles 26 a las 17:00.';
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest
+          .fn()
+          .mockResolvedValueOnce({ content: cancelClaim, toolCalls: [] })
+          .mockResolvedValueOnce({ content: cancelClaim, toolCalls: [] }),
+      };
+      const cancel = stubTool('cancel_appointment', {});
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
+
+      const answer = await buildOrchestrator(llm, cancel, handoff).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(cancel.execute).not.toHaveBeenCalled();
+      expect(handoff.execute).toHaveBeenCalledWith(
+        { reason: 'unverified_cancellation' },
+        expect.objectContaining({ conversationId: 'conversation-id' }),
+      );
+      expect(answer.text).toBe(AgentOutboundCopy.unverifiedCancellation);
+    });
+
+    it('confirms a cancellation from the receipt, not from model prose', async () => {
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest
+          .fn()
+          .mockResolvedValueOnce({
+            content: null,
+            toolCalls: [
+              { id: 'call-1', name: 'cancel_appointment', arguments: '{}' },
+            ],
+          })
+          .mockResolvedValueOnce({
+            content: 'Inventé que cancelé otra cita distinta.',
+            toolCalls: [],
+          }),
+      };
+      const action = cancelledAction();
+      const cancel = stubTool('cancel_appointment', {
+        committedAction: action,
+      });
+
+      const answer = await buildOrchestrator(llm, cancel).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(answer.text).toBe(renderActionConfirmation(action));
+      expect(answer.text).toContain('Masaje relajante 60 min');
+      expect(answer.text).toContain('17:00');
+      expect(answer.text).not.toContain('Inventé');
+    });
+
+    it('uses receipt-specific copy when only a receipt claim is unsupported', async () => {
+      const receiptClaim =
+        'Listo, el comprobante quedó corregido para el viernes.';
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest
+          .fn()
+          .mockResolvedValueOnce({ content: receiptClaim, toolCalls: [] })
+          .mockResolvedValueOnce({ content: receiptClaim, toolCalls: [] }),
+      };
+      const handoff = stubTool('request_handoff', {
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      });
+
+      const answer = await buildOrchestrator(llm, handoff).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(answer.text).toBe(AgentOutboundCopy.unverifiedDepositReceipt);
     });
   });
 
@@ -444,6 +603,7 @@ describe('AgentOrchestrator', () => {
           status: 'success',
           summary: 'Tres horarios.',
           offerableTimes,
+          forbidsUnlistedClockTimes: true,
         }),
       };
     }
@@ -534,6 +694,93 @@ describe('AgentOrchestrator', () => {
         expect.objectContaining({ conversationId: 'conversation-id' }),
       );
       expect(answer.text).toBe(AgentOutboundCopy.unverifiedSchedule);
+    });
+  });
+
+  // Reasoning models bill thinking against LLM_MAX_TOKENS, so a tight budget leaves the
+  // visible text cut mid-word or empty. Neither is an answer worth sending.
+  describe('when the token budget cuts the answer off', () => {
+    function handoffTool(): AgentTool {
+      return {
+        definition: {
+          name: 'request_handoff',
+          description: 'request_handoff',
+          parameters: { type: 'object' },
+        },
+        execute: jest.fn().mockResolvedValue({
+          status: 'success',
+          summary: 'Derivado.',
+          committedAction: {
+            operation: 'conversation.handoff',
+            resourceType: 'conversation',
+            resourceId: 'conversation-id',
+            outcome: 'paused',
+          },
+        }),
+      };
+    }
+
+    it('hands off instead of sending half a sentence', async () => {
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest.fn().mockResolvedValue({
+          content: 'Con Jimena podés hacerte cualquiera de estos:\n- *Limpieza',
+          toolCalls: [],
+          finishReason: 'length',
+        }),
+      };
+      const handoff = handoffTool();
+
+      const answer = await buildOrchestrator(llm, handoff).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(answer.text).toBe(AgentOutboundCopy.incompleteConsultation);
+      expect(handoff.execute).toHaveBeenCalledWith(
+        { reason: 'incomplete_answer' },
+        expect.objectContaining({ conversationId: 'conversation-id' }),
+      );
+    });
+
+    it('hands off when the model spent the whole budget thinking', async () => {
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest.fn().mockResolvedValue({
+          content: '',
+          toolCalls: [],
+          finishReason: 'length',
+        }),
+      };
+      const handoff = handoffTool();
+
+      const answer = await buildOrchestrator(llm, handoff).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(answer.text).toBe(AgentOutboundCopy.incompleteConsultation);
+      expect(handoff.execute).toHaveBeenCalled();
+    });
+
+    it('keeps a complete answer that merely reads short', async () => {
+      const llm: jest.Mocked<LlmPort> = {
+        chat: jest.fn().mockResolvedValue({
+          content: 'Sí, tenemos peeling químico.',
+          toolCalls: [],
+          finishReason: 'stop',
+        }),
+      };
+      const handoff = handoffTool();
+
+      const answer = await buildOrchestrator(llm, handoff).respond(
+        history,
+        context,
+        trigger,
+      );
+
+      expect(answer.text).toBe('Sí, tenemos peeling químico.');
+      expect(handoff.execute).not.toHaveBeenCalled();
     });
   });
 

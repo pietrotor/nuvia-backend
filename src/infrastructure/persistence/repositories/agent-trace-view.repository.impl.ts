@@ -33,6 +33,7 @@ const ERROR_OUTCOMES: AgentTraceOutcome[] = [
   'failed',
   'handoff_claims',
   'handoff_schedule',
+  'handoff_incomplete',
   'max_rounds',
 ];
 

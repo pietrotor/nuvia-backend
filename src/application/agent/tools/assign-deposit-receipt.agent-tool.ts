@@ -106,6 +106,16 @@ export class AssignDepositReceiptAgentTool implements AgentTool {
     return {
       status: 'success',
       summary: 'El comprobante quedó asignado a la cita indicada.',
+      committedAction: {
+        operation: 'deposit.receipt_assigned',
+        resourceType: 'deposit_receipt',
+        resourceId: receipt.id,
+        outcome: 'committed',
+      },
+      data: {
+        receiptId: receipt.id,
+        appointmentId,
+      },
       nextActions: [
         'Confirmá brevemente la corrección sin decir que el pago ya fue verificado.',
       ],

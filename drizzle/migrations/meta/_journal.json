@@ -225,6 +225,13 @@
       "when": 1788100000000,
       "tag": "0031_quoted-message-context",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1787664540219,
+      "tag": "0032_agent_trace_incomplete_handoff",
+      "breakpoints": true
     }
   ]
 }

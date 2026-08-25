@@ -4,6 +4,13 @@
 
 const CLOCK_TIME = /(?<![\d:])([01]?\d|2[0-3]):([0-5]\d)(?![\d:])/g;
 
+export interface OfferedTimesOptions {
+  // When true, an empty offerable list means "no exact times are allowed" (day/period
+  // choice). When false, an empty list means no schedule tool spoke this turn, so the
+  // guard stays out of the way.
+  forbidUnlisted?: boolean;
+}
+
 // Every distinct clock time the text names, as HH:mm.
 export function clockTimes(text: string): string[] {
   const found = new Set<string>();
@@ -15,17 +22,17 @@ export function clockTimes(text: string): string[] {
   return [...found];
 }
 
-// The times the answer names that no tool put on the table. An empty `offerable` means no
-// tool spoke about the schedule this turn, so there is nothing to check the answer against
-// and the guard stays out of the way.
+// The times the answer names that no tool put on the table.
 export function unofferedTimes(
   text: string,
   offerable: readonly string[],
+  options: OfferedTimesOptions = {},
 ): string[] {
-  if (offerable.length === 0) return [];
+  const forbidUnlisted = options.forbidUnlisted === true;
+  if (!forbidUnlisted && offerable.length === 0) return [];
 
   const allowed = new Set(offerable.flatMap(clockTimes));
-  if (allowed.size === 0) return [];
+  if (!forbidUnlisted && allowed.size === 0) return [];
 
   return clockTimes(text).filter((time) => !allowed.has(time));
 }

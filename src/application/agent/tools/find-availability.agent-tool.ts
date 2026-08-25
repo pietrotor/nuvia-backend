@@ -239,6 +239,7 @@ export class FindAvailabilityAgentTool implements AgentTool {
       status: 'success',
       summary: this.summarize(result),
       offerableTimes: this.preferredOfferableTimes(result, timezone),
+      forbidsUnlistedClockTimes: true,
       data: {
         mode: 'resolve_exact_time',
         preferred: result.preferred
@@ -318,6 +319,7 @@ export class FindAvailabilityAgentTool implements AgentTool {
           ? `No hay horarios en la ${DAY_PART_LABEL[dayPart]} dentro del rango pedido.`
           : this.summarize(result),
       offerableTimes: nextAvailable ? [nextAvailable.label] : [],
+      forbidsUnlistedClockTimes: true,
       data: {
         mode: 'choose_day_and_period',
         requestedPeriod: dayPart ? DAY_PART_LABEL[dayPart] : null,
@@ -385,6 +387,7 @@ export class FindAvailabilityAgentTool implements AgentTool {
         ...this.segmentOfferableTimes(segments, timezone),
         ...(nextAvailable ? [nextAvailable.label] : []),
       ],
+      forbidsUnlistedClockTimes: true,
       data: {
         mode: 'show_day_schedule',
         dayLabel: this.dayLabel(requestedAt, timezone),

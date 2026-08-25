@@ -63,6 +63,13 @@ export class ResendDepositQrAgentTool implements AgentTool {
         return {
           status: 'success',
           summary: `QR reenviado por ${result.amount ?? 'la seña'}.`,
+          committedAction: {
+            operation: 'deposit.qr_sent',
+            resourceType: 'deposit_qr',
+            resourceId: appointmentId,
+            outcome: 'accepted',
+          },
+          data: { appointmentId, amount: result.amount ?? null },
           nextActions: [
             'Avisar que el QR ya está en el chat, sin repetir el monto.',
           ],

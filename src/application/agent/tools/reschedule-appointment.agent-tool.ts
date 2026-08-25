@@ -1,6 +1,9 @@
 import { Injectable } from '@nestjs/common';
+import { DateTime } from 'luxon';
 
+import { GetAppointmentUseCase } from '@application/appointments/use-cases/get-appointment.use-case';
 import { RescheduleAppointmentUseCase } from '@application/appointments/use-cases/reschedule-appointment.use-case';
+import { GetBranchUseCase } from '@application/branches/use-cases/get-branch.use-case';
 import { BookingActor } from '@domain/appointments/value-objects/booking-actor.vo';
 import {
   BranchNotFoundError,
@@ -54,6 +57,8 @@ export class RescheduleAppointmentAgentTool implements AgentTool {
 
   constructor(
     private readonly rescheduleAppointment: RescheduleAppointmentUseCase,
+    private readonly getAppointment: GetAppointmentUseCase,
+    private readonly getBranch: GetBranchUseCase,
   ) {}
 
   async execute(
@@ -117,12 +122,39 @@ export class RescheduleAppointmentAgentTool implements AgentTool {
       throw error;
     }
 
+    const view = await this.getAppointment.execute(result.appointment.id);
+    const branch = view.appointment.branchId
+      ? await this.getBranch.execute(view.appointment.branchId)
+      : null;
+    const startsAtLabel = clockLabel(
+      result.appointment.startsAt,
+      context.timezone,
+    );
+    const dateLabel = DateTime.fromJSDate(result.appointment.startsAt)
+      .setZone(context.timezone)
+      .setLocale('es')
+      .toFormat("cccc d 'de' LLLL");
+
     return {
       status: 'success',
       summary: 'Cita reagendada.',
-      offerableTimes: [
-        clockLabel(result.appointment.startsAt, context.timezone),
-      ],
+      offerableTimes: [startsAtLabel],
+      committedAction: {
+        operation: 'appointment.reschedule',
+        resourceType: 'appointment',
+        resourceId: result.appointment.id,
+        outcome: 'committed',
+        facts: {
+          status: result.appointment.status,
+          startsAtLabel,
+          dateLabel,
+          serviceName: view.service.name,
+          professionalName: view.professional.name,
+          attendeeName: view.client.name,
+          branchName: branch?.name,
+          depositAtRisk: result.depositAtRisk,
+        },
+      },
       data: {
         appointmentId: result.appointment.id,
         branchId: result.appointment.branchId,
@@ -133,10 +165,10 @@ export class RescheduleAppointmentAgentTool implements AgentTool {
       },
       nextActions: result.depositAtRisk
         ? [
-            'Confirmar el nuevo horario.',
+            'El sistema confirma el nuevo horario; no inventes el estado.',
             'Avisar que el cambio quedó fuera del plazo y la seña puede retenerse; la dueña define.',
           ]
-        : ['Confirmar el nuevo horario.'],
+        : ['El sistema confirma el nuevo horario; no inventes el estado.'],
     };
   }
 }

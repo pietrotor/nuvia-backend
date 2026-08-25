@@ -5,6 +5,7 @@ import { GetBusinessConfigUseCase } from '@application/business-config/use-cases
 import { AgentTracePhase } from '@domain/agent/entities/agent-trace.entity';
 import {
   LLM_PORT,
+  LlmFinishReason,
   LlmMessage,
   LlmPort,
   LlmToolChoice,
@@ -15,12 +16,15 @@ import {
 } from '@domain/agent/repositories/agent-trace.repository';
 import { PromptChannel } from '@domain/agent/prompt/prompt-fragment';
 import {
+  AgentActionEvidence,
+  AgentCommittedAction,
+} from '@domain/agent/services/agent-action';
+import {
   clockTimes,
   unofferedTimes,
 } from '@domain/agent/services/offered-times';
 import {
   DEPOSIT_QR_QUEUED,
-  OutboundClaim,
   unsupportedClaims,
 } from '@domain/agent/services/outbound-claim';
 import {
@@ -42,6 +46,12 @@ import {
   TENANT_REPOSITORY,
   TenantRepository,
 } from '@domain/tenants/repositories/tenant.repository';
+import {
+  evidenceFromAction,
+  fallbackCopyForClaims,
+  pickConfirmationAction,
+  renderActionConfirmation,
+} from '../messages/action-confirmation';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
 import { toWhatsAppText } from '../messages/whatsapp-text';
 import {
@@ -92,10 +102,16 @@ export interface AgentResponse {
 interface AgentSession {
   messages: LlmMessage[];
   followUps: AgentFollowUp[];
-  // What actually happened this turn, which is what the answer is checked against.
-  evidence: string[];
+  // Resource-bound proof of what actually happened this turn.
+  evidence: AgentActionEvidence[];
+  committedActions: AgentCommittedAction[];
   // Every clock time the tools put on the table this turn.
   offerableTimes: string[];
+  // When a schedule tool constrained exact hours (including "none allowed").
+  forbidsUnlistedClockTimes: boolean;
+  // Once claims force a handoff, keep the safe fallback — do not overwrite it with a
+  // receipt from an earlier successful tool in the same turn.
+  claimHandoff: boolean;
 }
 
 @Injectable()
@@ -192,10 +208,13 @@ export class AgentOrchestrator {
       ],
       followUps: [],
       evidence: [],
+      committedActions: [],
       // Naming a clock time the client just wrote is not inventing one. Without this the
       // offered-times guard forced a rewrite every time the agent said "las 16:00 no
       // están libres".
       offerableTimes: trigger.text ? clockTimes(trigger.text) : [],
+      forbidsUnlistedClockTimes: false,
+      claimHandoff: false,
     };
 
     const answer = await this.answerWithTools(
@@ -205,8 +224,9 @@ export class AgentOrchestrator {
       'initial',
     );
     const claimed = await this.verifyClaims(answer, session, context, draft);
+    const confirmed = this.applyDeterministicConfirmation(claimed, session);
     const text = await this.verifyOfferedTimes(
-      claimed,
+      confirmed,
       session,
       context,
       draft,
@@ -295,9 +315,29 @@ export class AgentOrchestrator {
     return null;
   }
 
-  // An answer that announces a booking or a QR is only allowed out if the tool that
-  // performs it actually ran. Otherwise the model gets one round where it cannot reply in
-  // prose, so it either does the thing or hands off.
+  // Once a booking / cancel / reschedule committed, the model is no longer the authority
+  // on what happened: the receipt is. Framing without a receipt still goes through the
+  // claim guard.
+  private applyDeterministicConfirmation(
+    answer: string,
+    session: AgentSession,
+  ): string {
+    if (session.claimHandoff) return answer;
+
+    const action = pickConfirmationAction(session.committedActions);
+    if (!action) return answer;
+
+    const depositQrQueued = session.evidence.some(
+      (item) => item.operation === DEPOSIT_QR_QUEUED,
+    );
+    const rendered = renderActionConfirmation(action, { depositQrQueued });
+    return rendered ?? answer;
+  }
+
+  // An answer that announces a mutation is only allowed out if the matching committed
+  // action left evidence. Otherwise the model gets one round where it cannot reply in
+  // prose, so it either does the thing or hands off. We never auto-execute a mutation
+  // ourselves just to make false prose become true.
   private async verifyClaims(
     answer: string,
     session: AgentSession,
@@ -308,7 +348,7 @@ export class AgentOrchestrator {
     if (claims.length === 0) return answer;
 
     this.logger.warn(
-      `Answer claimed ${claims.join(', ')} with no tool to back it in conversation ${context.conversationId}: forcing a tool round`,
+      `Answer claimed ${claims.join(', ')} with no action to back it in conversation ${context.conversationId}: forcing a tool round`,
       AgentOrchestrator.name,
     );
     draft.recordGuard({
@@ -341,6 +381,7 @@ export class AgentOrchestrator {
       action: 'handoff',
     });
     draft.setPendingOutcome('handoff_claims');
+    session.claimHandoff = true;
     await this.executeTool(
       'request_handoff',
       JSON.stringify({ reason: `unverified_${stillUnsupported.join('_')}` }),
@@ -349,9 +390,7 @@ export class AgentOrchestrator {
       0,
     );
 
-    return stillUnsupported.includes(OutboundClaim.BOOKING)
-      ? AgentOutboundCopy.unverifiedBooking
-      : AgentOutboundCopy.unverifiedDepositQr;
+    return fallbackCopyForClaims(stillUnsupported);
   }
 
   // The agenda is the only place hours come from. When the answer names a time no tool
@@ -363,7 +402,9 @@ export class AgentOrchestrator {
     context: AgentContext,
     draft: AgentTraceDraft,
   ): Promise<string> {
-    const invented = unofferedTimes(answer, session.offerableTimes);
+    const invented = unofferedTimes(answer, session.offerableTimes, {
+      forbidUnlisted: session.forbidsUnlistedClockTimes,
+    });
     if (invented.length === 0) return answer;
 
     this.logger.warn(
@@ -388,7 +429,9 @@ export class AgentOrchestrator {
       draft,
       'schedule_retry',
     );
-    const stillInvented = unofferedTimes(retried, session.offerableTimes);
+    const stillInvented = unofferedTimes(retried, session.offerableTimes, {
+      forbidUnlisted: session.forbidsUnlistedClockTimes,
+    });
     if (stillInvented.length === 0) return retried;
 
     this.logger.error(
@@ -451,9 +494,16 @@ export class AgentOrchestrator {
       });
 
       if (result.toolCalls.length === 0) {
-        return (
-          result.content?.trim() || AgentOutboundCopy.incompleteConsultation
-        );
+        const answer = result.content?.trim();
+        if (!answer || result.finishReason === 'length') {
+          return await this.handOffIncompleteAnswer(
+            session,
+            context,
+            draft,
+            result.finishReason,
+          );
+        }
+        return answer;
       }
 
       session.messages.push({
@@ -469,21 +519,20 @@ export class AgentOrchestrator {
           draft,
           round,
         );
-        if (toolResult.status === 'success') {
-          session.evidence.push(call.name);
-        } else {
-          this.logger.warn(
-            `Tool ${call.name} returned ${toolResult.status}: ${toolResult.summary}`,
-            AgentOrchestrator.name,
-          );
-        }
+        this.recordEvidence(session, toolResult, call.name);
         if (toolResult.offerableTimes?.length) {
           session.offerableTimes.push(...toolResult.offerableTimes);
+        }
+        if (toolResult.forbidsUnlistedClockTimes) {
+          session.forbidsUnlistedClockTimes = true;
         }
         if (toolResult.followUp) {
           session.followUps.push(toolResult.followUp);
           if (toolResult.followUp.kind === 'deposit_qr') {
-            session.evidence.push(DEPOSIT_QR_QUEUED);
+            session.evidence.push({
+              operation: DEPOSIT_QR_QUEUED,
+              resourceId: toolResult.followUp.appointmentId,
+            });
           }
         }
         session.messages.push({
@@ -500,6 +549,61 @@ export class AgentOrchestrator {
 
     draft.setPendingOutcome('max_rounds');
     return AgentOutboundCopy.needsHumanContinuation;
+  }
+
+  // A completion the token budget cut off is not an answer. Reasoning models bill thinking
+  // against that same budget, so the visible text can stop mid-word or never start, and
+  // sending it would leak half a sentence. Retrying is pointless — the budget is unchanged —
+  // so a human takes the thread, which is also what the reply promises.
+  private async handOffIncompleteAnswer(
+    session: AgentSession,
+    context: AgentContext,
+    draft: AgentTraceDraft,
+    finishReason: LlmFinishReason | undefined,
+  ): Promise<string> {
+    const detected = finishReason ?? 'empty_content';
+    this.logger.error(
+      `Model returned no usable answer (finish reason ${detected}) in conversation ${context.conversationId}: handing off`,
+      undefined,
+      AgentOrchestrator.name,
+    );
+    draft.recordGuard({
+      guard: 'incomplete_answer',
+      detected: [detected],
+      action: 'handoff',
+    });
+    draft.setPendingOutcome('handoff_incomplete');
+    // The reply below promises a handoff, so its receipt has to reach the evidence the
+    // claim guard reads. Without it the guard rightly rewrites our own copy.
+    const handoff = await this.executeTool(
+      'request_handoff',
+      JSON.stringify({ reason: 'incomplete_answer' }),
+      context,
+      draft,
+      0,
+    );
+    this.recordEvidence(session, handoff, 'request_handoff');
+
+    return AgentOutboundCopy.incompleteConsultation;
+  }
+
+  private recordEvidence(
+    session: AgentSession,
+    toolResult: AgentToolResult,
+    toolName: string,
+  ): void {
+    if (toolResult.status !== 'success' || !toolResult.committedAction) {
+      if (toolResult.status !== 'success') {
+        this.logger.warn(
+          `Tool ${toolName} returned ${toolResult.status}: ${toolResult.summary}`,
+          AgentOrchestrator.name,
+        );
+      }
+      return;
+    }
+
+    session.committedActions.push(toolResult.committedAction);
+    session.evidence.push(evidenceFromAction(toolResult.committedAction));
   }
 
   private async executeTool(
@@ -542,6 +646,14 @@ export class AgentOrchestrator {
         nextActions: result.nextActions,
         offerableTimes: result.offerableTimes,
         followUp: result.followUp,
+        committedAction: result.committedAction
+          ? {
+              operation: result.committedAction.operation,
+              resourceType: result.committedAction.resourceType,
+              resourceId: result.committedAction.resourceId,
+              outcome: result.committedAction.outcome,
+            }
+          : undefined,
         latencyMs: this.clock.now().getTime() - startedAt,
       });
       return result;

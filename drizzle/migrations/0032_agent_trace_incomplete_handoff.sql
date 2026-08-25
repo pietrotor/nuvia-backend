@@ -1,0 +1,1 @@
+ALTER TYPE "public"."agent_trace_outcome" ADD VALUE 'handoff_incomplete' BEFORE 'failed';

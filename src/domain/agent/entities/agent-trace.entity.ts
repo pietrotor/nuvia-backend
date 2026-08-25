@@ -14,6 +14,7 @@ export type AgentTraceOutcome =
   | 'max_rounds'
   | 'handoff_claims'
   | 'handoff_schedule'
+  | 'handoff_incomplete'
   | 'failed'
   | 'skipped_paused'
   | 'skipped_quota'
@@ -79,13 +80,19 @@ export type AgentTraceStep =
       nextActions?: string[];
       offerableTimes?: string[];
       followUp?: TracedFollowUp;
+      committedAction?: {
+        operation: string;
+        resourceType: string;
+        resourceId: string;
+        outcome: string;
+      };
       latencyMs: number;
       error?: string;
       truncated?: boolean;
     }
   | {
       type: 'guard';
-      guard: 'claims' | 'offered_times';
+      guard: 'claims' | 'offered_times' | 'incomplete_answer';
       detected: string[];
       action: 'retry' | 'handoff';
     }

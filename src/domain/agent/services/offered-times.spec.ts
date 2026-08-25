@@ -44,4 +44,20 @@ describe('unofferedTimes', () => {
   it('stays out of the way when no tool spoke about the schedule', () => {
     expect(unofferedTimes('Te espero a las 17:45', [])).toEqual([]);
   });
+
+  it('treats every exact hour as invented when the schedule forbids unlisted times', () => {
+    expect(
+      unofferedTimes('Podés venir a las 09:15 o 10:30', [], {
+        forbidUnlisted: true,
+      }),
+    ).toEqual(['09:15', '10:30']);
+  });
+
+  it('still allows listed times when the schedule is constrained', () => {
+    expect(
+      unofferedTimes('Tenemos 09:00', ['09:00 a 12:00'], {
+        forbidUnlisted: true,
+      }),
+    ).toEqual([]);
+  });
 });

@@ -62,6 +62,7 @@ export class AgentTraceSummaryResponseDto {
       'max_rounds',
       'handoff_claims',
       'handoff_schedule',
+      'handoff_incomplete',
       'failed',
       'skipped_paused',
       'skipped_quota',

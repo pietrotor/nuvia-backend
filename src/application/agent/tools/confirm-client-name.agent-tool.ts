@@ -49,6 +49,13 @@ export class ConfirmClientNameAgentTool implements AgentTool {
       return {
         status: 'success',
         summary: `Nombre guardado: ${client.name}.`,
+        committedAction: {
+          operation: 'client.name_confirmed',
+          resourceType: 'client',
+          resourceId: client.id,
+          outcome: 'committed',
+          facts: { clientName: client.name ?? name },
+        },
         data: { clientId: client.id, name: client.name },
         nextActions: [
           'Usar ese nombre al confirmar. Seguir con lo que pidió, sin repetir la pregunta.',

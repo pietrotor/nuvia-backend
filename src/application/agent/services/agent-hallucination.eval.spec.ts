@@ -15,8 +15,10 @@ import {
   MessageDirection,
   MessageKind,
 } from '@domain/conversations/entities/message.entity';
+import { renderActionConfirmation } from '../messages/action-confirmation';
 import { AgentOutboundCopy } from '../messages/agent-outbound.copy';
 import { AgentTool } from '../tools/agent-tool';
+import { bookedAction, cancelledAction } from './agent-action.fixtures';
 import { AgentOrchestrator } from './agent-orchestrator.service';
 import { AgentPromptComposer } from './agent-prompt.composer';
 import { AgentToolRegistry } from './agent-tool.registry';
@@ -38,6 +40,25 @@ const INCIDENT_TRANSCRIPT: [MessageDirection, string][] = [
 const HALLUCINATED_ANSWER =
   'Listo, te agendo Hidrafacial con Camila Rojas mañana domingo 9 de agosto a las 19:00.\n\nEn un momento te llega el QR con el monto de la seña.';
 
+// Production incident 2026-08-24: the model answered "Listo, cancelamos…" after the
+// client confirmed with "Se", without ever calling cancel_appointment.
+const CANCEL_INCIDENT: [MessageDirection, string][] = [
+  [MessageDirection.INBOUND, 'Quiero cancelar mi cita'],
+  [
+    MessageDirection.OUTBOUND,
+    'Entendido, Pietro. Antes de cancelar tu masaje del miércoles 26 a las 17:00 con Valeria Mamani, ¿hay algún motivo en particular o simplemente no te viene bien ese horario?',
+  ],
+  [MessageDirection.INBOUND, 'No podré ir'],
+  [
+    MessageDirection.OUTBOUND,
+    'Está bien. Entonces cancelamos tu cita del miércoles 26 a las 17:00.\n\n¿Confirmás que querés cancelarla?',
+  ],
+  [MessageDirection.INBOUND, 'Se'],
+];
+
+const CANCEL_HALLUCINATION =
+  'Listo, cancelamos tu reserva del masaje del miércoles 26 a las 17:00.\n\nSi en otro momento te gustaría agendar un turno, acá estoy para ayudarte. ¿Hay algo más?';
+
 const context = {
   tenantId: 'tenant-id',
   conversationId: 'conversation-id',
@@ -45,8 +66,8 @@ const context = {
   clientPhoneE164: '+59169531998',
 };
 
-function history(): Message[] {
-  return INCIDENT_TRANSCRIPT.map(
+function historyFrom(transcript: [MessageDirection, string][]): Message[] {
+  return transcript.map(
     ([direction, content], index) =>
       new Message({
         id: `message-${index}`,
@@ -122,11 +143,6 @@ function buildOrchestrator(
   );
 }
 
-const trigger = {
-  providerMessageId: 'provider-id',
-  text: 'Quiero confirmar',
-};
-
 describe('agent hallucination eval', () => {
   it('never tells the client a booking happened when the agenda stayed empty', async () => {
     // The model behaves exactly as it did during the incident: it announces the booking,
@@ -154,12 +170,24 @@ describe('agent hallucination eval', () => {
       'book_appointment',
       jest.fn().mockRejectedValue(new SlotUnavailableError()),
     );
-    const handoff = tool('request_handoff');
+    const handoff = tool(
+      'request_handoff',
+      jest.fn().mockResolvedValue({
+        status: 'success',
+        summary: 'Derivado.',
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      }),
+    );
 
     const answer = await buildOrchestrator({ chat }, [book, handoff]).respond(
-      history(),
+      historyFrom(INCIDENT_TRANSCRIPT),
       context,
-      trigger,
+      { providerMessageId: 'provider-id', text: 'Quiero confirmar' },
     );
 
     expect(detectOutboundClaims(answer.text)).toEqual([]);
@@ -170,6 +198,16 @@ describe('agent hallucination eval', () => {
   });
 
   it('lets the confirmation through once the booking is real', async () => {
+    const action = bookedAction({
+      facts: {
+        ...bookedAction().facts,
+        awaitsDeposit: true,
+        serviceName: 'Hidrafacial',
+        professionalName: 'Camila Rojas',
+        dateLabel: 'lunes',
+        startsAtLabel: '16:45',
+      },
+    });
     const chat = jest
       .fn<Promise<LlmChatResult>, [LlmChatInput]>()
       .mockResolvedValueOnce({ content: HALLUCINATED_ANSWER, toolCalls: [] })
@@ -189,21 +227,100 @@ describe('agent hallucination eval', () => {
       jest.fn().mockResolvedValue({
         status: 'success',
         summary: 'Turno reservado, pendiente de seña.',
+        committedAction: action,
         followUp: { kind: 'deposit_qr', appointmentId: 'ap1' },
       }),
     );
 
     const answer = await buildOrchestrator({ chat }, [book]).respond(
-      history(),
+      historyFrom(INCIDENT_TRANSCRIPT),
       context,
-      trigger,
+      { providerMessageId: 'provider-id', text: 'Quiero confirmar' },
     );
 
     expect(detectOutboundClaims(answer.text)).toContain(OutboundClaim.BOOKING);
     expect(book.execute).toHaveBeenCalled();
+    expect(answer.text).toBe(
+      renderActionConfirmation(action, { depositQrQueued: true }),
+    );
     expect(answer.followUps).toEqual([
       { kind: 'deposit_qr', appointmentId: 'ap1' },
     ]);
     expect(chat).toHaveBeenCalledTimes(3);
+  });
+
+  it('never tells the client a cancellation happened when cancel_appointment did not run', async () => {
+    const chat = jest
+      .fn<Promise<LlmChatResult>, [LlmChatInput]>()
+      .mockResolvedValueOnce({ content: CANCEL_HALLUCINATION, toolCalls: [] })
+      .mockResolvedValueOnce({ content: CANCEL_HALLUCINATION, toolCalls: [] });
+    const cancel = tool('cancel_appointment');
+    const handoff = tool(
+      'request_handoff',
+      jest.fn().mockResolvedValue({
+        status: 'success',
+        summary: 'Derivado.',
+        committedAction: {
+          operation: 'conversation.handoff',
+          resourceType: 'conversation',
+          resourceId: 'conversation-id',
+          outcome: 'committed',
+        },
+      }),
+    );
+
+    const answer = await buildOrchestrator({ chat }, [cancel, handoff]).respond(
+      historyFrom(CANCEL_INCIDENT),
+      context,
+      { providerMessageId: 'provider-id', text: 'Se' },
+    );
+
+    expect(cancel.execute).not.toHaveBeenCalled();
+    expect(detectOutboundClaims(answer.text)).toEqual([]);
+    expect(answer.text).toBe(AgentOutboundCopy.unverifiedCancellation);
+    expect(handoff.execute).toHaveBeenCalled();
+  });
+
+  it('confirms a real cancellation from the receipt after the tool commits', async () => {
+    const action = cancelledAction();
+    const chat = jest
+      .fn<Promise<LlmChatResult>, [LlmChatInput]>()
+      .mockResolvedValueOnce({ content: CANCEL_HALLUCINATION, toolCalls: [] })
+      .mockResolvedValueOnce({
+        content: null,
+        toolCalls: [
+          {
+            id: 'call-1',
+            name: 'cancel_appointment',
+            arguments: JSON.stringify({
+              appointmentId: 'ap1',
+              confirmedByClient: true,
+            }),
+          },
+        ],
+      })
+      .mockResolvedValueOnce({
+        content: 'Inventé que cancelé otra cosa.',
+        toolCalls: [],
+      });
+    const cancel = tool(
+      'cancel_appointment',
+      jest.fn().mockResolvedValue({
+        status: 'success',
+        summary: 'Cita cancelada.',
+        committedAction: action,
+      }),
+    );
+
+    const answer = await buildOrchestrator({ chat }, [cancel]).respond(
+      historyFrom(CANCEL_INCIDENT),
+      context,
+      { providerMessageId: 'provider-id', text: 'Se' },
+    );
+
+    expect(cancel.execute).toHaveBeenCalled();
+    expect(answer.text).toBe(renderActionConfirmation(action));
+    expect(answer.text).toContain('quedó cancelada');
+    expect(answer.text).not.toContain('Inventé');
   });
 });

@@ -31,14 +31,22 @@ export class ExpectDepositReceiptAgentTool implements AgentTool {
     context: AgentContext,
   ): Promise<AgentToolResult> {
     const values = asObject(input);
+    const appointmentId = requiredUuid(values, 'appointmentId');
     await this.expectReceipt.execute({
       conversationId: context.conversationId,
       clientId: context.clientId,
-      appointmentId: requiredUuid(values, 'appointmentId'),
+      appointmentId,
     });
     return {
       status: 'success',
       summary: 'La próxima imagen se asignará a la cita indicada.',
+      committedAction: {
+        operation: 'deposit.receipt_expected',
+        resourceType: 'appointment',
+        resourceId: appointmentId,
+        outcome: 'committed',
+      },
+      data: { appointmentId },
       nextActions: ['Pedile que envíe el comprobante ahora.'],
     };
   }

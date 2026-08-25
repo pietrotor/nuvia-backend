@@ -37,10 +37,25 @@ export class RequestHandoffAgentTool implements AgentTool {
       context.conversationId,
       reason,
     );
+    if (!conversation) {
+      return {
+        status: 'error',
+        summary: 'No se pudo derivar la conversación.',
+        nextActions: [
+          'Reintentar una vez o avisar que el equipo revisará el chat.',
+        ],
+      };
+    }
     await this.handoffLabel.markAttention(conversation);
     return {
       status: 'success',
       summary: 'Conversación derivada a una persona.',
+      committedAction: {
+        operation: 'conversation.handoff',
+        resourceType: 'conversation',
+        resourceId: conversation.id,
+        outcome: 'committed',
+      },
       nextActions: ['Avisar que el equipo continuará la conversación.'],
     };
   }

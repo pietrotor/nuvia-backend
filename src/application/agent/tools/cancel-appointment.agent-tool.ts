@@ -1,7 +1,11 @@
 import { Injectable } from '@nestjs/common';
+import { DateTime } from 'luxon';
 
 import { CancelAppointmentUseCase } from '@application/appointments/use-cases/cancel-appointment.use-case';
+import { GetAppointmentUseCase } from '@application/appointments/use-cases/get-appointment.use-case';
+import { GetBranchUseCase } from '@application/branches/use-cases/get-branch.use-case';
 import { AgentContext, AgentTool, AgentToolResult } from './agent-tool';
+import { clockLabel } from './clock-label';
 import { asObject, optionalString, requiredUuid } from './tool-input';
 
 @Injectable()
@@ -25,7 +29,11 @@ export class CancelAppointmentAgentTool implements AgentTool {
     },
   };
 
-  constructor(private readonly cancelAppointment: CancelAppointmentUseCase) {}
+  constructor(
+    private readonly cancelAppointment: CancelAppointmentUseCase,
+    private readonly getAppointment: GetAppointmentUseCase,
+    private readonly getBranch: GetBranchUseCase,
+  ) {}
 
   async execute(
     input: unknown,
@@ -40,15 +48,45 @@ export class CancelAppointmentAgentTool implements AgentTool {
       };
     }
 
+    const appointmentId = requiredUuid(values, 'appointmentId');
     const result = await this.cancelAppointment.execute(
-      requiredUuid(values, 'appointmentId'),
+      appointmentId,
       { reason: optionalString(values, 'reason') },
       context.clientId,
     );
+    const view = await this.getAppointment.execute(result.appointment.id);
+    const branch = view.appointment.branchId
+      ? await this.getBranch.execute(view.appointment.branchId)
+      : null;
+    const startsAtLabel = clockLabel(
+      view.appointment.startsAt,
+      context.timezone,
+    );
+    const dateLabel = DateTime.fromJSDate(view.appointment.startsAt)
+      .setZone(context.timezone)
+      .setLocale('es')
+      .toFormat("cccc d 'de' LLLL");
 
     return {
       status: 'success',
       summary: 'Cita cancelada.',
+      offerableTimes: [startsAtLabel],
+      committedAction: {
+        operation: 'appointment.cancel',
+        resourceType: 'appointment',
+        resourceId: result.appointment.id,
+        outcome: 'committed',
+        facts: {
+          status: result.appointment.status,
+          startsAtLabel,
+          dateLabel,
+          serviceName: view.service.name,
+          professionalName: view.professional.name,
+          attendeeName: view.client.name,
+          branchName: branch?.name,
+          depositAtRisk: result.depositAtRisk,
+        },
+      },
       data: {
         appointmentId: result.appointment.id,
         status: result.appointment.status,
@@ -56,10 +94,13 @@ export class CancelAppointmentAgentTool implements AgentTool {
       },
       nextActions: result.depositAtRisk
         ? [
-            'Confirmar la cancelación.',
+            'El sistema confirma la cancelación; no inventes el estado.',
             'Avisar que fue fuera del plazo y la seña puede retenerse; la dueña define.',
           ]
-        : ['Confirmar la cancelación y ofrecer reagendar más adelante.'],
+        : [
+            'El sistema confirma la cancelación; no inventes el estado.',
+            'Ofrecer reagendar más adelante si corresponde.',
+          ],
     };
   }
 }

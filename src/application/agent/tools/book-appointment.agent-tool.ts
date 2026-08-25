@@ -223,6 +223,24 @@ export class BookAppointmentAgentTool implements AgentTool {
         ? 'Turno reservado, pendiente de seña.'
         : 'Turno reservado y confirmado.',
       offerableTimes: [startsAtLabel],
+      committedAction: {
+        operation: 'appointment.book',
+        resourceType: 'appointment',
+        resourceId: appointment.id,
+        outcome: 'committed',
+        facts: {
+          status: appointment.status,
+          startsAtLabel,
+          dateLabel,
+          serviceName: view.service.name,
+          professionalName: view.professional.name,
+          attendeeName: view.client.name,
+          branchName: branch.name,
+          branchAddress: branch.address,
+          mapsUrl: branch.mapsUrl,
+          awaitsDeposit,
+        },
+      },
       data: {
         appointmentId: appointment.id,
         attendee: {
@@ -253,18 +271,17 @@ export class BookAppointmentAgentTool implements AgentTool {
       nextActions: awaitsDeposit
         ? chargeable
           ? [
-              'No repetir la checklist previa. Abrir con el resultado y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
-              'Usar solamente los datos devueltos por esta herramienta y avisar que el QR de la seña llega en el siguiente mensaje.',
+              'No inventes el comprobante: el sistema confirma la reserva con los datos de esta herramienta.',
+              'Avisar que el QR de la seña llega en el siguiente mensaje.',
               'No calcular ni mencionar el monto de la seña: va en el mensaje del QR.',
             ]
           : [
-              'No repetir la checklist previa. Abrir con el resultado y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
+              'No inventes el comprobante: el sistema confirma la reserva con los datos de esta herramienta.',
               'No prometer ningún QR: no va a salir ninguna imagen. Decir que el turno queda con la seña pendiente y que el equipo pasa los datos del pago.',
               'Derivar con request_handoff para que una persona pase los datos del pago.',
             ]
         : [
-            'No repetir la checklist previa. Abrir diciendo que quedó confirmada y enviar el comprobante compacto en tres viñetas: Cuándo, Atención y Dónde; pasar el mapa aparte si existe.',
-            'Usar solamente los datos devueltos por esta herramienta.',
+            'No inventes el comprobante: el sistema confirma la reserva con los datos de esta herramienta.',
             'No mencionar seña ni QR: este servicio no cobra anticipo y no va a salir ninguna imagen.',
           ],
       followUp:
