@@ -58,6 +58,7 @@ export class TenantsController {
     return TenantResponseDto.from(
       tenant,
       config?.countryCode ?? DEFAULT_COUNTRY_CODE,
+      config?.businessCategory,
     );
   }
 

@@ -41,6 +41,7 @@ export function buildSystemPrompt(
   const values: Record<string, string> = {
     agentName: input.voice.agentName,
     client: input.lexicon.client,
+    clientPlural: input.lexicon.clientPlural,
     clientName: input.clientName,
     professional: input.lexicon.professional,
     professionalPlural: input.lexicon.professionalPlural,

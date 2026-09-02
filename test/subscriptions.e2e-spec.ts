@@ -80,6 +80,34 @@ describe('Subscriptions (e2e)', () => {
     expect(luna.body.status).toBe('trialing');
   });
 
+  it('gives the clinic demo the pro plan and seven professionals', async () => {
+    const clinicOwner = await login('sofia@lospinos.test');
+    const response = await request(app.getHttpServer())
+      .get('/api/v1/subscriptions/me')
+      .set('Authorization', `Bearer ${clinicOwner}`)
+      .expect(200);
+
+    expect(response.body.plan.code).toBe('pro');
+    expect(response.body.status).toBe('active');
+    expect(response.body.caps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          key: 'professionals',
+          used: 7,
+          limit: 12,
+        }),
+      ]),
+    );
+
+    const config = await request(app.getHttpServer())
+      .get('/api/v1/business-config')
+      .set('Authorization', `Bearer ${clinicOwner}`)
+      .expect(200);
+    expect(config.body.businessCategory).toBe('medical');
+    expect(config.body.lexicon.client).toBe('paciente');
+    expect(config.body.lexicon.professionalPlural).toBe('médicos');
+  });
+
   it('rejects owners from the admin plan endpoints', async () => {
     const response = await request(app.getHttpServer())
       .get('/api/v1/admin/plans')

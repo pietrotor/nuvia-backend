@@ -232,6 +232,13 @@
       "when": 1788200000000,
       "tag": "0032_agent_trace_incomplete_handoff",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1788366675728,
+      "tag": "0033_polite_quicksilver",
+      "breakpoints": true
     }
   ]
 }

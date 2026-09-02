@@ -27,6 +27,7 @@ export const businessCategoryEnum = pgEnum('business_category', [
   'esthetics',
   'spa',
   'beauty',
+  'medical',
 ]);
 
 export const businessConfigs = pgTable(

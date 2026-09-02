@@ -1,0 +1,1 @@
+ALTER TYPE "public"."business_category" ADD VALUE IF NOT EXISTS 'medical';

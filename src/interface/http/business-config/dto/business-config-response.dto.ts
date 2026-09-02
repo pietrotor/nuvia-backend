@@ -10,6 +10,7 @@ import { BusinessCategory } from '@domain/business-config/value-objects/business
 import { ClientReminderPolicy } from '@domain/business-config/value-objects/client-reminder-policy.vo';
 import { CurrencyResponseDto } from '@interface/http/common/dto/money-response.dto';
 import { DEFAULT_COUNTRY_CODE } from '@domain/common/value-objects/country-code.vo';
+import { CategoryLexiconResponseDto } from './category-lexicon-response.dto';
 
 export class BusinessConfigResponseDto {
   @ApiProperty()
@@ -29,6 +30,9 @@ export class BusinessConfigResponseDto {
     description: 'Read-only for the owner: support assigns it',
   })
   businessCategory: BusinessCategory;
+
+  @ApiProperty({ type: CategoryLexiconResponseDto })
+  lexicon: CategoryLexiconResponseDto;
 
   @ApiProperty({ type: CurrencyResponseDto })
   currency: CurrencyResponseDto;
@@ -68,6 +72,7 @@ export class BusinessConfigResponseDto {
       agentName: config.agentName,
       tone: config.tone,
       businessCategory: config.businessCategory,
+      lexicon: CategoryLexiconResponseDto.from(config.businessCategory),
       currency: CurrencyResponseDto.from(config.currency),
       countryCode: config.countryCode,
       logoUrl: config.logoUrl,

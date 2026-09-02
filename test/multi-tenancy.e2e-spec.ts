@@ -131,6 +131,7 @@ describe('Multi-tenancy (e2e)', () => {
       .expect(200);
 
     expect(response.body.name).toBe('Estética Glow');
+    expect(response.body.lexicon.clientPlural).toBe('clientas');
   });
 
   it('a user created by an owner lands in the owner tenant', async () => {

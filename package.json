@@ -24,6 +24,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "ts-node -r tsconfig-paths/register src/infrastructure/persistence/drizzle/migrate.ts",
     "db:studio": "drizzle-kit studio",
+    "seed:clinic": "node scripts/seed-clinic-los-pinos.mjs",
     "db:backfill-branches": "ts-node -r tsconfig-paths/register scripts/backfill-branches.ts",
     "bootstrap:owner": "tsx src/cli/bootstrap-owner.ts"
   },

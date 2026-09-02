@@ -152,6 +152,8 @@ type SeedService = {
   name: string;
   durationMinutes: number;
   price: string;
+  description?: string;
+  keywords?: string[];
   requiresDeposit?: boolean;
   depositAmount?: string;
   depositPercent?: number;
@@ -795,6 +797,370 @@ const FIXTURES: SeedFixture[] = [
       },
     ],
   },
+  {
+    name: 'Clínica Médica Los Pinos',
+    slug: 'clinica-los-pinos',
+    businessCategory: BusinessCategory.MEDICAL,
+    agentName: 'Vale',
+    planCode: 'pro',
+    subscriptionStatus: SubscriptionStatus.ACTIVE,
+    owner: {
+      name: 'Sofía Mendoza',
+      email: 'sofia@lospinos.test',
+      phone: '+59170003001',
+    },
+    staff: [
+      {
+        name: 'Carla Terán',
+        email: 'recepcion@lospinos.test',
+        phone: '+59170003002',
+      },
+    ],
+    faq: {
+      ubicacion:
+        'Estamos en Av. América 1240, entre Beijing y Melchor Pérez, Cochabamba.',
+      pagos:
+        'Aceptamos QR bancario, transferencia y efectivo. La consulta pediátrica se paga por adelantado por QR; el turno se confirma cuando verificamos el comprobante.',
+      llegada:
+        'Llegá 10 minutos antes. Si es la primera vez, traé carnet y estudios previos si los tenés.',
+      cancelaciones:
+        'Podés cancelar o reagendar hasta 24 horas antes. Si la consulta ya estaba pagada, coordinamos el cambio con recepción.',
+      seguros:
+        'Trabajamos de forma particular. Si tu seguro reembolsa, te damos el recibo de la consulta.',
+      estudios:
+        'Los laboratorios y las imágenes se interpretan en consultorio. El asistente no lee resultados por WhatsApp.',
+    },
+    professionals: [
+      { key: 'andrea', name: 'Dra. Andrea Molina', weeklyHours: WEEKDAY_9_18 },
+      { key: 'mateo', name: 'Dr. Mateo Ríos', weeklyHours: MORNING_ONLY },
+      {
+        key: 'sebastian',
+        name: 'Dr. Sebastián Torrico',
+        weeklyHours: WEEKDAY_9_18,
+      },
+      {
+        key: 'natalia',
+        name: 'Dra. Natalia Villarroel',
+        weeklyHours: WEEKDAY_10_19,
+      },
+      {
+        key: 'mauricio',
+        name: 'Dr. Mauricio Salvatierra',
+        weeklyHours: WEEKDAY_9_18,
+      },
+      {
+        key: 'alejandra',
+        name: 'Dra. Alejandra Valverde',
+        weeklyHours: AFTERNOON_HOURS,
+      },
+      {
+        key: 'fernando',
+        name: 'Dr. Fernando Aramayo',
+        weeklyHours: AFTERNOON_HOURS,
+      },
+    ],
+    services: [
+      {
+        key: 'medicina-interna',
+        name: 'Consulta de medicina interna',
+        description:
+          'Consulta general de adultos: control, chequeo y derivación a especialidad si hace falta.',
+        keywords: [
+          'medicina interna',
+          'clinica general',
+          'chequeo',
+          'medico general',
+        ],
+        durationMinutes: 30,
+        price: '150.00',
+        professionalKeys: ['andrea'],
+      },
+      {
+        key: 'adulto-mayor',
+        name: 'Consulta de adulto mayor',
+        description:
+          'Evaluación geriátrica de control. El plan de seguimiento lo define la médica en consultorio.',
+        keywords: ['geriatria', 'adulto mayor', 'abuelos', 'tercera edad'],
+        durationMinutes: 40,
+        price: '150.00',
+        professionalKeys: ['andrea'],
+      },
+      {
+        key: 'pediatria',
+        name: 'Consulta pediátrica',
+        description:
+          'Consulta de niños y adolescentes. Se paga el total por adelantado; el turno se confirma al verificar el QR.',
+        keywords: ['pediatria', 'niños', 'pediatrico', 'control del bebe'],
+        durationMinutes: 30,
+        price: '150.00',
+        requiresDeposit: true,
+        depositAmount: '150.00',
+        professionalKeys: ['mateo'],
+      },
+      {
+        key: 'control-pediatrico',
+        name: 'Control pediátrico',
+        description:
+          'Control de seguimiento. No incluye interpretación de laboratorios por WhatsApp.',
+        keywords: ['control pediatrico', 'control del niño', 'peso y talla'],
+        durationMinutes: 25,
+        price: '120.00',
+        professionalKeys: ['mateo'],
+      },
+      {
+        key: 'urologia',
+        name: 'Consulta urológica',
+        description:
+          'Consulta de urología. Cualquier indicación o estudio lo define el médico en consultorio.',
+        keywords: ['urologia', 'urologo', 'prostata', 'infertilidad'],
+        durationMinutes: 30,
+        price: '150.00',
+        professionalKeys: ['sebastian'],
+      },
+      {
+        key: 'una-encarnada',
+        name: 'Extracción de uña encarnada',
+        description:
+          'Evaluación y procedimiento de uña encarnada. El médico confirma en consultorio si corresponde hacerlo ese día.',
+        keywords: ['uña encarnada', 'uñero', 'podologia', 'uña'],
+        durationMinutes: 40,
+        price: '200.00',
+        professionalKeys: ['sebastian'],
+      },
+      {
+        key: 'traumatologia',
+        name: 'Consulta traumatológica',
+        description:
+          'Consulta de traumatología para dolor articular o lesiones. No incluye rayos; si hacen falta se coordinan aparte.',
+        keywords: ['traumatologia', 'hueso', 'rodilla', 'esguince', 'dolor'],
+        durationMinutes: 30,
+        price: '150.00',
+        professionalKeys: ['mauricio'],
+      },
+      {
+        key: 'ginecologia',
+        name: 'Consulta ginecológica',
+        description:
+          'Consulta de ginecología y control. Los estudios se interpretan en consultorio.',
+        keywords: ['ginecologia', 'ginecologa', 'papanicolau', 'pap'],
+        durationMinutes: 30,
+        price: '150.00',
+        professionalKeys: ['natalia'],
+      },
+      {
+        key: 'tamizaje-cuello',
+        name: 'Tamizaje preventivo de cuello uterino',
+        description:
+          'Agenda de consulta preventiva. El PAP y laboratorio se coordinan en recepción; no se entregan resultados por WhatsApp.',
+        keywords: [
+          'pap',
+          'papanicolau',
+          'cuello uterino',
+          'prevencion',
+          'cancer de cuello',
+        ],
+        durationMinutes: 40,
+        price: '150.00',
+        professionalKeys: ['natalia'],
+      },
+      {
+        key: 'endocrinologia',
+        name: 'Consulta endocrinológica',
+        description:
+          'Consulta de endocrinología. El médico indica en consultorio si hace falta laboratorio.',
+        keywords: ['endocrinologia', 'tiroides', 'diabetes', 'hormonas'],
+        durationMinutes: 30,
+        price: '150.00',
+        professionalKeys: ['alejandra'],
+      },
+      {
+        key: 'evaluacion-diabetes',
+        name: 'Evaluación de diabetes',
+        description:
+          'Consulta para control de glucosa. Los laboratorios se piden o se leen en consultorio, no por chat.',
+        keywords: ['diabetes', 'glucosa', 'azucar', 'hemoglobina'],
+        durationMinutes: 35,
+        price: '240.00',
+        professionalKeys: ['alejandra'],
+      },
+      {
+        key: 'evaluacion-tiroides',
+        name: 'Evaluación tiroidea',
+        description:
+          'Consulta de control tiroideo. TSH y demás estudios se interpretan con la médica.',
+        keywords: ['tiroides', 'tsh', 't4', 'bocio'],
+        durationMinutes: 35,
+        price: '420.00',
+        professionalKeys: ['alejandra'],
+      },
+      {
+        key: 'evaluacion-bariatrica',
+        name: 'Evaluación para cirugía bariátrica',
+        description:
+          'Consulta de evaluación. No agenda la cirugía: el cirujano define el siguiente paso en consultorio.',
+        keywords: [
+          'bariatrica',
+          'manga gastrica',
+          'obesidad',
+          'cirugia de obesidad',
+          'mini lipo',
+        ],
+        durationMinutes: 45,
+        price: '200.00',
+        professionalKeys: ['fernando'],
+      },
+    ],
+    branches: [
+      {
+        key: 'matriz',
+        name: 'Casa Matriz',
+        slug: 'casa-matriz',
+        address: 'Av. América 1240, Cochabamba',
+        phone: '+59170003000',
+        weeklyHours: WEEKDAY_9_18,
+        isPrimary: true,
+        professionalKeys: [
+          'andrea',
+          'mateo',
+          'sebastian',
+          'natalia',
+          'mauricio',
+          'alejandra',
+          'fernando',
+        ],
+        services: [
+          { key: 'medicina-interna' },
+          { key: 'adulto-mayor' },
+          { key: 'pediatria' },
+          { key: 'control-pediatrico' },
+          { key: 'urologia' },
+          { key: 'una-encarnada' },
+          { key: 'traumatologia' },
+          { key: 'ginecologia' },
+          { key: 'tamizaje-cuello' },
+          { key: 'endocrinologia' },
+          { key: 'evaluacion-diabetes' },
+          { key: 'evaluacion-tiroides' },
+          { key: 'evaluacion-bariatrica' },
+        ],
+      },
+    ],
+    clients: [
+      { name: 'Elena Quiroga', phoneE164: '+59170003101' },
+      {
+        name: 'Tomás Rivera',
+        phoneE164: '+59170003102',
+        notes: 'Viola, 4 años. Viene con la mamá.',
+      },
+      { name: 'Marcos Peña', phoneE164: '+59170003103' },
+      { name: 'Luciana Calderón', phoneE164: '+59170003104' },
+      { name: 'Roberto Aguirre', phoneE164: '+59170003105' },
+      { name: 'Patricia Núñez', phoneE164: '+59170003106' },
+      { name: 'Jorge Salazar', phoneE164: '+59170003107' },
+      { name: 'Camila Ferrel', phoneE164: '+59170003108' },
+    ],
+    appointments: [
+      {
+        clientPhone: '+59170003102',
+        professionalKey: 'mateo',
+        serviceKey: 'pediatria',
+        branchKey: 'matriz',
+        dayOffset: 1,
+        hour: 9,
+        status: AppointmentStatus.PENDING_DEPOSIT,
+      },
+      {
+        clientPhone: '+59170003108',
+        professionalKey: 'mateo',
+        serviceKey: 'pediatria',
+        branchKey: 'matriz',
+        dayOffset: 2,
+        hour: 10,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003101',
+        professionalKey: 'andrea',
+        serviceKey: 'medicina-interna',
+        branchKey: 'matriz',
+        dayOffset: 0,
+        hour: 11,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003103',
+        professionalKey: 'sebastian',
+        serviceKey: 'urologia',
+        branchKey: 'matriz',
+        dayOffset: 0,
+        hour: 15,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003104',
+        professionalKey: 'natalia',
+        serviceKey: 'ginecologia',
+        branchKey: 'matriz',
+        dayOffset: 1,
+        hour: 11,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003105',
+        professionalKey: 'mauricio',
+        serviceKey: 'traumatologia',
+        branchKey: 'matriz',
+        dayOffset: 3,
+        hour: 10,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003106',
+        professionalKey: 'alejandra',
+        serviceKey: 'evaluacion-tiroides',
+        branchKey: 'matriz',
+        dayOffset: 4,
+        hour: 14,
+        status: AppointmentStatus.CONFIRMED,
+      },
+      {
+        clientPhone: '+59170003107',
+        professionalKey: 'fernando',
+        serviceKey: 'evaluacion-bariatrica',
+        branchKey: 'matriz',
+        dayOffset: -2,
+        hour: 16,
+        status: AppointmentStatus.ATTENDED,
+      },
+      {
+        clientPhone: '+59170003101',
+        professionalKey: 'andrea',
+        serviceKey: 'adulto-mayor',
+        branchKey: 'matriz',
+        dayOffset: -5,
+        hour: 10,
+        status: AppointmentStatus.ATTENDED,
+      },
+      {
+        clientPhone: '+59170003103',
+        professionalKey: 'sebastian',
+        serviceKey: 'una-encarnada',
+        branchKey: 'matriz',
+        dayOffset: -1,
+        hour: 11,
+        status: AppointmentStatus.NO_SHOW,
+      },
+    ],
+    scheduleBlocks: [
+      {
+        professionalKey: 'mateo',
+        dayOffset: 5,
+        startHour: 8,
+        endHour: 13,
+        reason: 'Congreso de pediatría',
+      },
+    ],
+  },
 ];
 
 function atLocal(dayOffset: number, hour: number, minute = 0): Date {
@@ -1021,6 +1387,8 @@ export class SeedUseCase {
         for (const service of fixture.services) {
           const created = await this.serviceRepository.create({
             name: service.name,
+            description: service.description ?? null,
+            keywords: service.keywords ?? [],
             durationMinutes: service.durationMinutes,
             currency: Currency.BOB,
             price: service.price,

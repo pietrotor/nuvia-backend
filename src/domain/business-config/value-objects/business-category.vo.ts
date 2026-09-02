@@ -3,12 +3,14 @@ export enum BusinessCategory {
   ESTHETICS = 'esthetics',
   SPA = 'spa',
   BEAUTY = 'beauty',
+  MEDICAL = 'medical',
 }
 
 // Plurals are spelled out instead of derived: "sesión" turns into "sesiones", so any
 // rule that appends an "s" would write it wrong.
 export interface CategoryLexicon {
   client: string;
+  clientPlural: string;
   professional: string;
   professionalPlural: string;
   service: string;
@@ -24,6 +26,7 @@ export interface CategoryLexicon {
 const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   [BusinessCategory.DEFAULT]: {
     client: 'cliente',
+    clientPlural: 'clientes',
     professional: 'profesional',
     professionalPlural: 'profesionales',
     service: 'servicio',
@@ -33,6 +36,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   },
   [BusinessCategory.ESTHETICS]: {
     client: 'clienta',
+    clientPlural: 'clientas',
     professional: 'profesional',
     professionalPlural: 'profesionales',
     service: 'tratamiento',
@@ -42,6 +46,7 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   },
   [BusinessCategory.SPA]: {
     client: 'clienta',
+    clientPlural: 'clientas',
     professional: 'terapeuta',
     professionalPlural: 'terapeutas',
     service: 'servicio',
@@ -51,10 +56,21 @@ const LEXICONS: Record<BusinessCategory, CategoryLexicon> = {
   },
   [BusinessCategory.BEAUTY]: {
     client: 'clienta',
+    clientPlural: 'clientas',
     professional: 'estilista',
     professionalPlural: 'estilistas',
     service: 'servicio',
     servicePlural: 'servicios',
+    session: 'sesión',
+    sessionPlural: 'sesiones',
+  },
+  [BusinessCategory.MEDICAL]: {
+    client: 'paciente',
+    clientPlural: 'pacientes',
+    professional: 'médico',
+    professionalPlural: 'médicos',
+    service: 'consulta',
+    servicePlural: 'consultas',
     session: 'sesión',
     sessionPlural: 'sesiones',
   },

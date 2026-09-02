@@ -101,9 +101,29 @@ describe('buildSystemPrompt', () => {
       category: BusinessCategory.SPA,
       lexicon: categoryLexicon(BusinessCategory.SPA),
     });
+    const medical = build({
+      category: BusinessCategory.MEDICAL,
+      lexicon: categoryLexicon(BusinessCategory.MEDICAL),
+      fragments: [
+        PLATFORM,
+        {
+          key: 'category.medical',
+          layer: PromptLayer.CATEGORY,
+          lines: [
+            'Hablás de {{servicePlural}} y llamás {{client}} a quien escribe.',
+          ],
+        },
+        TENANT_NOTES,
+        GUARD,
+        VOLATILE,
+        CLIENT_NAME,
+      ],
+    });
 
     expect(esthetics.staticText).toContain('tratamientos');
     expect(spa.staticText).toContain('servicios');
+    expect(medical.staticText).toContain('consultas');
+    expect(medical.staticText).toContain('paciente');
     expect(esthetics.staticText).not.toEqual(spa.staticText);
   });
 
