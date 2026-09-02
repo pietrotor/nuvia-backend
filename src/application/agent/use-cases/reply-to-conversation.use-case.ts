@@ -321,6 +321,9 @@ export class ReplyToConversationUseCase {
         (params.error.params.error_type != null
           ? ` error_type=${params.error.params.error_type}`
           : '') +
+        (params.error.params.cause != null
+          ? ` cause=${params.error.params.cause}`
+          : '') +
         (params.error.params.model != null
           ? ` model=${params.error.params.model}`
           : ''),

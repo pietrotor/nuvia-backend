@@ -13,6 +13,11 @@ import {
 } from '@domain/agent/ports/llm.port';
 import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { resolveTemperature } from './llm-sampling';
+import {
+  MAX_LLM_ATTEMPTS,
+  isTransientLlmFailure,
+  resolveTimeoutMs,
+} from './llm-transport';
 
 type OpenAiContentPart =
   | { type?: string; text?: string }
@@ -67,6 +72,15 @@ type OpenAiChatPayload = {
   choices?: OpenAiChoice[];
 };
 
+type ChatRequest = {
+  url: string;
+  apiKey: string;
+  model: string;
+  maxTokens: number;
+  temperature: number | undefined;
+  timeoutMs: number;
+};
+
 @Injectable()
 export class OpenAiCompatibleLlmAdapter implements LlmPort {
   constructor(protected readonly config: ConfigService) {}
@@ -84,42 +98,63 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
         provider: this.providerName,
       });
     }
-    const maxTokens = this.maxTokens();
-    const temperature = resolveTemperature(this.config);
+    const request: ChatRequest = {
+      url: `${baseUrl.replace(/\/$/, '')}/chat/completions`,
+      apiKey,
+      model,
+      maxTokens: this.maxTokens(),
+      temperature: resolveTemperature(this.config),
+      timeoutMs: resolveTimeoutMs(this.config),
+    };
+
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.attempt(input, request);
+      } catch (error) {
+        if (attempt >= MAX_LLM_ATTEMPTS || !isTransientLlmFailure(error)) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  private async attempt(
+    input: LlmChatInput,
+    request: ChatRequest,
+  ): Promise<LlmChatResult> {
+    const { model, temperature } = request;
+    const signal = AbortSignal.timeout(request.timeoutMs);
 
     try {
-      const response = await fetch(
-        `${baseUrl.replace(/\/$/, '')}/chat/completions`,
-        {
-          method: 'POST',
-          headers: {
-            authorization: `Bearer ${apiKey}`,
-            'content-type': 'application/json',
-            ...this.extraHeaders(input),
-          },
-          body: JSON.stringify(
-            this.extendBody(
-              {
-                model,
-                messages: this.mapMessages(input.messages),
-                tools: input.tools?.map((tool) => ({
-                  type: 'function',
-                  function: tool,
-                })),
-                tool_choice: input.tools?.length
-                  ? this.mapToolChoice(input.toolChoice)
-                  : undefined,
-                ...(temperature == null ? {} : { temperature }),
-                max_tokens: maxTokens,
-              },
-              input,
-            ),
-          ),
-          signal: AbortSignal.timeout(25_000),
+      const response = await fetch(request.url, {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${request.apiKey}`,
+          'content-type': 'application/json',
+          ...this.extraHeaders(input),
         },
-      );
+        body: JSON.stringify(
+          this.extendBody(
+            {
+              model,
+              messages: this.mapMessages(input.messages),
+              tools: input.tools?.map((tool) => ({
+                type: 'function',
+                function: tool,
+              })),
+              tool_choice: input.tools?.length
+                ? this.mapToolChoice(input.toolChoice)
+                : undefined,
+              ...(temperature == null ? {} : { temperature }),
+              max_tokens: request.maxTokens,
+            },
+            input,
+          ),
+        ),
+        signal,
+      });
 
-      const payload = await this.readPayload(response, model);
+      const payload = await this.readPayload(response, model, signal);
       this.assertSuccess(response, payload, model);
 
       const choice = payload.choices?.[0];
@@ -214,9 +249,13 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
     return value;
   }
 
+  // OpenRouter answers 200 and pads the body with whitespace while it waits on
+  // the upstream model, so an expired budget surfaces as an unreadable body on
+  // an otherwise healthy response, not as a rejected fetch.
   private async readPayload(
     response: Response,
     model: string,
+    signal: AbortSignal,
   ): Promise<OpenAiChatPayload> {
     try {
       return (await response.json()) as OpenAiChatPayload;
@@ -225,7 +264,7 @@ export class OpenAiCompatibleLlmAdapter implements LlmPort {
         provider: this.providerName,
         status: response.status,
         model,
-        cause: 'parse',
+        cause: signal.aborted ? 'timeout' : 'parse',
       });
     }
   }

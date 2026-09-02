@@ -11,6 +11,11 @@ import {
 } from '@domain/agent/ports/llm.port';
 import { ErrorCode, InternalError } from '@domain/common/exceptions';
 import { resolveTemperature } from './llm-sampling';
+import {
+  MAX_LLM_ATTEMPTS,
+  isTransientLlmFailure,
+  resolveTimeoutMs,
+} from './llm-transport';
 
 type AnthropicContentBlock =
   | { type: 'text'; text: string; cache_control?: { type: 'ephemeral' } }
@@ -46,6 +51,14 @@ interface AnthropicResponse {
   )[];
 }
 
+interface AnthropicRequest {
+  url: string;
+  apiKey: string;
+  model: string;
+  temperature: number | undefined;
+  timeoutMs: number;
+}
+
 @Injectable()
 export class AnthropicLlmAdapter implements LlmPort {
   constructor(private readonly config: ConfigService) {}
@@ -60,13 +73,37 @@ export class AnthropicLlmAdapter implements LlmPort {
       });
     }
 
-    const temperature = resolveTemperature(this.config);
+    const request: AnthropicRequest = {
+      url: this.messagesUrl(baseUrl),
+      apiKey,
+      model,
+      temperature: resolveTemperature(this.config),
+      timeoutMs: resolveTimeoutMs(this.config),
+    };
+
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        return await this.attempt(input, request);
+      } catch (error) {
+        if (attempt >= MAX_LLM_ATTEMPTS || !isTransientLlmFailure(error)) {
+          throw error;
+        }
+      }
+    }
+  }
+
+  private async attempt(
+    input: LlmChatInput,
+    request: AnthropicRequest,
+  ): Promise<LlmChatResult> {
+    const { model, temperature } = request;
+    const signal = AbortSignal.timeout(request.timeoutMs);
 
     try {
-      const response = await fetch(this.messagesUrl(baseUrl), {
+      const response = await fetch(request.url, {
         method: 'POST',
         headers: {
-          'x-api-key': apiKey,
+          'x-api-key': request.apiKey,
           'anthropic-version': '2023-06-01',
           'content-type': 'application/json',
         },
@@ -87,9 +124,9 @@ export class AnthropicLlmAdapter implements LlmPort {
             : undefined,
           ...(temperature == null ? {} : { temperature }),
         }),
-        signal: AbortSignal.timeout(25_000),
+        signal,
       });
-      const payload = await this.readPayload(response, model);
+      const payload = await this.readPayload(response, model, signal);
       if (!response.ok || payload.type === 'error' || payload.error) {
         throw new InternalError(ErrorCode.LLM_PROVIDER_ERROR, {
           provider: 'anthropic',
@@ -205,6 +242,7 @@ export class AnthropicLlmAdapter implements LlmPort {
   private async readPayload(
     response: Response,
     model: string,
+    signal: AbortSignal,
   ): Promise<AnthropicResponse> {
     try {
       return (await response.json()) as AnthropicResponse;
@@ -213,7 +251,7 @@ export class AnthropicLlmAdapter implements LlmPort {
         provider: 'anthropic',
         status: response.status,
         model,
-        cause: 'parse',
+        cause: signal.aborted ? 'timeout' : 'parse',
       });
     }
   }

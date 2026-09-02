@@ -31,6 +31,24 @@ const tools = [
   },
 ];
 
+// Answers headers right away and then never completes the body, the way the
+// provider behaves while it waits on a wedged upstream model.
+function stalledResponse(signal: AbortSignal): Response {
+  return {
+    ok: true,
+    status: 200,
+    json: () =>
+      new Promise((_resolve, reject) => {
+        const fail = () => reject(new Error('body aborted'));
+        if (signal.aborted) {
+          fail();
+          return;
+        }
+        signal.addEventListener('abort', fail);
+      }),
+  } as unknown as Response;
+}
+
 describe('OpenAiCompatibleLlmAdapter', () => {
   afterEach(() => jest.restoreAllMocks());
 
@@ -308,6 +326,67 @@ describe('OpenAiCompatibleLlmAdapter', () => {
         messages: [{ role: 'user', content: 'Hola' }],
       }),
     ).rejects.toBeInstanceOf(InternalError);
+  });
+
+  it('reports a body that outlived the budget as a timeout, not a parse failure', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockImplementation((_url, init) =>
+        Promise.resolve(stalledResponse(init?.signal as AbortSignal)),
+      );
+
+    await expect(
+      new OpenAiCompatibleLlmAdapter(
+        buildConfig({ LLM_TIMEOUT_MS: '20' }),
+      ).chat({ messages: [{ role: 'user', content: 'Hola' }] }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.LLM_PROVIDER_ERROR,
+      params: expect.objectContaining({ status: 200, cause: 'timeout' }),
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('retries a stalled attempt once and keeps the answer of the second', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockImplementationOnce((_url, init) =>
+        Promise.resolve(stalledResponse(init?.signal as AbortSignal)),
+      )
+      .mockImplementationOnce(() =>
+        Promise.resolve(
+          jsonResponse({ choices: [{ message: { content: 'Hola' } }] }),
+        ),
+      );
+
+    const result = await new OpenAiCompatibleLlmAdapter(
+      buildConfig({ LLM_TIMEOUT_MS: '20' }),
+    ).chat({ messages: [{ role: 'user', content: 'Hola' }] });
+
+    expect(result.content).toBe('Hola');
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not retry an error the provider answered on purpose', async () => {
+    const fetchMock = jest
+      .spyOn(global, 'fetch')
+      .mockResolvedValue(
+        jsonResponse({ error: { message: 'slow down' } }, 429),
+      );
+
+    await expect(
+      new OpenAiCompatibleLlmAdapter(buildConfig()).chat({
+        messages: [{ role: 'user', content: 'Hola' }],
+      }),
+    ).rejects.toMatchObject({ code: ErrorCode.LLM_PROVIDER_ERROR });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('rejects an invalid timeout budget', async () => {
+    await expect(
+      new OpenAiCompatibleLlmAdapter(
+        buildConfig({ LLM_TIMEOUT_MS: 'soon' }),
+      ).chat({ messages: [{ role: 'user', content: 'Hola' }] }),
+    ).rejects.toMatchObject({ code: ErrorCode.LLM_NOT_CONFIGURED });
   });
 
   it('requires base URL, API key and model', async () => {
